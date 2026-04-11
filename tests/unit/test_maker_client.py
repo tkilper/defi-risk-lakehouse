@@ -24,16 +24,16 @@ FAKE_VAULT = {
 
 
 class TestMakerClientUrl:
-    def test_uses_hosted_url_when_no_api_key(self, monkeypatch):
-        monkeypatch.setenv("GRAPH_API_KEY", "")
+    def test_uses_hosted_url_when_no_api_key(self, monkeymodule):
+        monkeymodule.setenv("GRAPH_API_KEY", "")
         client = MakerClient()
         assert client._client.url == _HOSTED_URL
 
 
 class TestMakerFetchVaults:
     @resp_mock.activate
-    def test_returns_list_of_vaults(self, monkeypatch):
-        monkeypatch.setenv("GRAPH_API_KEY", "")
+    def test_returns_list_of_vaults(self, monkeymodule):
+        monkeymodule.setenv("GRAPH_API_KEY", "")
         resp_mock.add(
             resp_mock.POST,
             _HOSTED_URL,
@@ -47,8 +47,8 @@ class TestMakerFetchVaults:
         assert result[0]["collateralType"]["id"] == "ETH-A"
 
     @resp_mock.activate
-    def test_returns_empty_list_when_no_vaults(self, monkeypatch):
-        monkeypatch.setenv("GRAPH_API_KEY", "")
+    def test_returns_empty_list_when_no_vaults(self, monkeymodule):
+        monkeymodule.setenv("GRAPH_API_KEY", "")
         resp_mock.add(
             resp_mock.POST,
             _HOSTED_URL,

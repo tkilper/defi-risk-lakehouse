@@ -112,8 +112,8 @@ class TestExecute:
             client.execute("{ things { id } }")
 
     @resp_mock.activate
-    def test_injects_api_key_into_url(self, monkeypatch):
-        monkeypatch.setenv("GRAPH_API_KEY", "my-secret-key")
+    def test_injects_api_key_into_url(self, monkeymodule):
+        monkeymodule.setenv("GRAPH_API_KEY", "my-secret-key")
         url_template = "https://gateway.thegraph.com/api/{api_key}/subgraphs/id/abc"
         expected_url = "https://gateway.thegraph.com/api/my-secret-key/subgraphs/id/abc"
         resp_mock.add(

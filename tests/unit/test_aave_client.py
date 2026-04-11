@@ -37,13 +37,13 @@ FAKE_POSITION = {
 
 
 class TestAaveClientUrl:
-    def test_uses_hosted_url_when_no_api_key(self, monkeypatch):
-        monkeypatch.setenv("GRAPH_API_KEY", "")
+    def test_uses_hosted_url_when_no_api_key(self, monkeymodule):
+        monkeymodule.setenv("GRAPH_API_KEY", "")
         client = AaveClient()
         assert client._client.url == _HOSTED_URL
 
-    def test_uses_gateway_url_when_api_key_set(self, monkeypatch):
-        monkeypatch.setenv("GRAPH_API_KEY", "test-key-123")
+    def test_uses_gateway_url_when_api_key_set(self, monkeymodule):
+        monkeymodule.setenv("GRAPH_API_KEY", "test-key-123")
         client = AaveClient()
         expected_url = _GATEWAY_URL.replace("{api_key}", "test-key-123")
         assert client._client.url == expected_url
@@ -52,8 +52,8 @@ class TestAaveClientUrl:
 
 class TestAaveFetchPositions:
     @resp_mock.activate
-    def test_returns_list_of_positions(self, monkeypatch):
-        monkeypatch.setenv("GRAPH_API_KEY", "")
+    def test_returns_list_of_positions(self, monkeymodule):
+        monkeymodule.setenv("GRAPH_API_KEY", "")
         resp_mock.add(
             resp_mock.POST,
             _HOSTED_URL,
@@ -67,8 +67,8 @@ class TestAaveFetchPositions:
         assert result[0]["reserve"]["symbol"] == "WETH"
 
     @resp_mock.activate
-    def test_returns_empty_list_when_no_positions(self, monkeypatch):
-        monkeypatch.setenv("GRAPH_API_KEY", "")
+    def test_returns_empty_list_when_no_positions(self, monkeymodule):
+        monkeymodule.setenv("GRAPH_API_KEY", "")
         resp_mock.add(
             resp_mock.POST,
             _HOSTED_URL,
@@ -80,8 +80,8 @@ class TestAaveFetchPositions:
         assert result == []
 
     @resp_mock.activate
-    def test_includes_debt_fields(self, monkeypatch):
-        monkeypatch.setenv("GRAPH_API_KEY", "")
+    def test_includes_debt_fields(self, monkeymodule):
+        monkeymodule.setenv("GRAPH_API_KEY", "")
         resp_mock.add(
             resp_mock.POST,
             _HOSTED_URL,

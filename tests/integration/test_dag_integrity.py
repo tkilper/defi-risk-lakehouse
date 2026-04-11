@@ -18,17 +18,17 @@ pytest.importorskip("airflow", reason="apache-airflow not installed")
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _airflow_home(tmp_path_factory, monkeypatch):
+def _airflow_home(tmp_path_factory, monkeymodule):
     """Configure Airflow to use a temporary SQLite database for DAG loading."""
     airflow_home = tmp_path_factory.mktemp("airflow_home")
-    monkeypatch.setenv("AIRFLOW_HOME", str(airflow_home))
-    monkeypatch.setenv(
+    monkeymodule.setenv("AIRFLOW_HOME", str(airflow_home))
+    monkeymodule.setenv(
         "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN",
         f"sqlite:///{airflow_home}/airflow.db",
     )
-    monkeypatch.setenv("AIRFLOW__CORE__LOAD_EXAMPLES", "false")
-    monkeypatch.setenv("AIRFLOW__CORE__EXECUTOR", "SequentialExecutor")
-    monkeypatch.setenv(
+    monkeymodule.setenv("AIRFLOW__CORE__LOAD_EXAMPLES", "false")
+    monkeymodule.setenv("AIRFLOW__CORE__EXECUTOR", "SequentialExecutor")
+    monkeymodule.setenv(
         "PYTHONPATH", os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     )
 

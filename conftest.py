@@ -10,13 +10,19 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _set_default_env(monkeypatch):
+def _set_default_env(monkeymodule):
     """
     Set minimal environment variables so unit tests don't require a running
-    Docker environment.  Individual tests can override these via monkeypatch.
+    Docker environment.  Individual tests can override these via monkeymodule.
     """
-    monkeypatch.setenv("GRAPH_API_KEY", "")
-    monkeypatch.setenv("MINIO_ENDPOINT", "http://localhost:9000")
-    monkeypatch.setenv("MINIO_ACCESS_KEY", "minioadmin")
-    monkeypatch.setenv("MINIO_SECRET_KEY", "minioadmin")
-    monkeypatch.setenv("NESSIE_URI", "http://localhost:19120/api/v2")
+    monkeymodule.setenv("GRAPH_API_KEY", "")
+    monkeymodule.setenv("MINIO_ENDPOINT", "http://localhost:9000")
+    monkeymodule.setenv("MINIO_ACCESS_KEY", "minioadmin")
+    monkeymodule.setenv("MINIO_SECRET_KEY", "minioadmin")
+    monkeymodule.setenv("NESSIE_URI", "http://localhost:19120/api/v2")
+
+
+@pytest.fixture(scope="module")
+def monkeymodule():
+    with pytest.MonkeyPatch.context() as mp:
+        yield mp
