@@ -2,8 +2,6 @@
 Root conftest.py — shared pytest fixtures and configuration.
 """
 
-import os
-
 import pytest
 
 

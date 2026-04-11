@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -57,7 +57,7 @@ def write_raw_records(
     str
         The S3 key the data was written to.
     """
-    ts = snapshot_ts or datetime.now(tz=timezone.utc)
+    ts = snapshot_ts or datetime.now(tz=UTC)
     date_str = ts.strftime("%Y-%m-%d")
     hour_str = ts.strftime("%H")
 

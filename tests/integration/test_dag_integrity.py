@@ -44,7 +44,7 @@ def dag_bag():
 class TestDagImport:
     def test_no_import_errors(self, dag_bag):
         assert dag_bag.import_errors == {}, (
-            f"DAG import errors found:\n"
+            "DAG import errors found:\n"
             + "\n".join(f"  {k}: {v}" for k, v in dag_bag.import_errors.items())
         )
 

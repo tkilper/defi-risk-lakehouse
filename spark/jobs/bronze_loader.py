@@ -20,11 +20,9 @@ from __future__ import annotations
 
 import logging
 import sys
-from datetime import datetime, timezone
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import StringType, StructField, StructType, TimestampType
 
 from spark.jobs.utils import get_spark_session
 

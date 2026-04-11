@@ -5,7 +5,6 @@ Tests that the AaveClient constructs the correct URL based on env vars
 and that it properly delegates pagination to GraphQLClient.
 """
 
-import pytest
 import responses as resp_mock
 
 from ingestion.aave_client import AaveClient, _GATEWAY_URL, _HOSTED_URL, _SUBGRAPH_ID

@@ -171,6 +171,13 @@ trino-shell: ## Open a Trino SQL shell
 
 .PHONY: help
 help: ## Show this help message
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage: make $(BOLD)<target>$(RESET)\n"} \
-	  /^[a-zA-Z_-]+:.*?##/ { printf "  $(GREEN)%-22s$(RESET) %s\n", $$1, $$2 } \
-	  /^##@/ { printf "\n$(BOLD)%s$(RESET)\n", substr($$0, 5) }' $(MAKEFILE_LIST)
+	@python -c "\
+import re, sys; \
+lines = open('Makefile').readlines(); \
+print('\nUsage: make <target>\n'); \
+[\
+  print('\n' + l[4:].rstrip()) if l.startswith('##@') \
+  else print('  {:<22} {}'.format(*m.groups())) \
+  for l in lines \
+  for m in [re.match(r'^([a-zA-Z_-]+):.*?##\s*(.*)', l)] if m or l.startswith('##@') \
+]"

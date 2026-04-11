@@ -41,7 +41,6 @@ SPARK_JOBS_DIR = "/opt/airflow/spark/jobs"
 
 
 def log_completion(**context) -> None:
-    ti = context["ti"]
     logger.info(
         "DeFi Risk transform pipeline complete for run: %s",
         context.get("run_id"),

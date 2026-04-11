@@ -5,9 +5,8 @@ All HTTP calls are mocked with the ``responses`` library so no network
 access is required.
 """
 
-import json
-
 import pytest
+import requests
 import responses as resp_mock
 
 from ingestion.graph_client import GraphQLClient, GraphQLError, PAGE_SIZE
@@ -108,7 +107,7 @@ class TestExecute:
             status=403,
         )
         client = GraphQLClient(FAKE_URL, max_retries=1, backoff_base=0.01)
-        with pytest.raises(Exception):
+        with pytest.raises(requests.HTTPError):
             client.execute("{ things { id } }")
 
     @resp_mock.activate

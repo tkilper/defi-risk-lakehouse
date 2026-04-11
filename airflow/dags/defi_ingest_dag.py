@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
