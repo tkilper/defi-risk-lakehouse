@@ -8,8 +8,7 @@ access is required.
 import pytest
 import requests
 import responses as resp_mock
-
-from ingestion.graph_client import GraphQLClient, GraphQLError, PAGE_SIZE
+from ingestion.graph_client import PAGE_SIZE, GraphQLClient, GraphQLError
 
 FAKE_URL = "https://api.thegraph.com/subgraphs/name/test/protocol"
 

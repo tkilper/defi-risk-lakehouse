@@ -4,8 +4,7 @@ Unit tests for the MakerDAO vault ingestion client and unit conversions.
 
 import pytest
 import responses as resp_mock
-
-from ingestion.maker_client import MakerClient, _HOSTED_URL
+from ingestion.maker_client import _HOSTED_URL, MakerClient
 
 FAKE_VAULT = {
     "id": "1",

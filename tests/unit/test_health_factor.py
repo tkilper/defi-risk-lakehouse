@@ -7,7 +7,6 @@ silver transformer without requiring any external services.
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Pure-Python implementation of the health factor formula
 # (mirrors the dbt macro and Spark job logic)

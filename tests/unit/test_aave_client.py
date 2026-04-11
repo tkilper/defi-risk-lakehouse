@@ -6,8 +6,7 @@ and that it properly delegates pagination to GraphQLClient.
 """
 
 import responses as resp_mock
-
-from ingestion.aave_client import AaveClient, _GATEWAY_URL, _HOSTED_URL, _SUBGRAPH_ID
+from ingestion.aave_client import _GATEWAY_URL, _HOSTED_URL, _SUBGRAPH_ID, AaveClient
 
 FAKE_POSITION = {
     "id": "0xabc-0xdef",
