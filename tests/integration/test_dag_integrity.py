@@ -31,6 +31,10 @@ def _airflow_home(tmp_path_factory, monkeymodule):
     monkeymodule.setenv(
         "PYTHONPATH", os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     )
+    # Initialize the Airflow metadata DB schema so get_dag() can query DagModel.
+    from airflow.utils.db import resetdb
+
+    resetdb()
 
 
 @pytest.fixture(scope="module")

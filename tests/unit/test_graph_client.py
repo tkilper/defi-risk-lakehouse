@@ -75,7 +75,7 @@ class TestExecute:
         resp_mock.add(
             resp_mock.POST,
             FAKE_URL,
-            body=ConnectionError("Network unreachable"),
+            body=requests.ConnectionError("Network unreachable"),
         )
         resp_mock.add(
             resp_mock.POST,
@@ -93,7 +93,7 @@ class TestExecute:
             resp_mock.add(
                 resp_mock.POST,
                 FAKE_URL,
-                body=ConnectionError("Always failing"),
+                body=requests.ConnectionError("Always failing"),
             )
         client = GraphQLClient(FAKE_URL, max_retries=3, backoff_base=0.01)
         with pytest.raises(RuntimeError, match="retries exhausted"):
