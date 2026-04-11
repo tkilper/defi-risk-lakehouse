@@ -4,7 +4,6 @@ Root conftest.py — shared pytest fixtures and configuration.
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Environment setup for unit tests
 # ---------------------------------------------------------------------------
