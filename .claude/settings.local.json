@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /c/Users/Tristan/OneDrive/Desktop/Data_Eng_Portfolio_Projects/defi-risk-lakehouse log --oneline -10)",
+      "WebSearch",
+      "WebFetch(domain:projectnessie.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:thegraph.com)",
+      "WebFetch(domain:iceberg.apache.org)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:docs.aave.com)"
+    ]
+  }
+}

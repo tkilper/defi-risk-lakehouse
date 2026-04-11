@@ -1,0 +1,69 @@
+version: 2
+
+models:
+  - name: fct_health_factors
+    description: >
+      Current health factor for every borrower across all three DeFi protocols.
+      One row per (user_address, protocol, ingestion_date).
+    columns:
+      - name: user_address
+        tests: [not_null]
+      - name: protocol
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["aave_v3", "compound_v3", "maker"]
+      - name: health_factor
+        tests:
+          - not_null
+      - name: risk_tier
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["HEALTHY", "WATCH", "AT_RISK", "CRITICAL", "LIQUIDATABLE"]
+      - name: total_collateral_usd
+        tests: [not_null]
+      - name: total_debt_usd
+        tests: [not_null]
+      - name: weighted_liq_threshold
+        tests: [not_null]
+      - name: collateral_buffer_usd
+        description: >
+          How much collateral (USD) can be lost before liquidation.
+          May be negative for already-liquidatable positions.
+
+  - name: fct_liquidation_risk
+    description: >
+      Protocol-level risk summary bucketed by risk tier.
+      Used for dashboard visualisation of current protocol exposure.
+    columns:
+      - name: protocol
+        tests: [not_null]
+      - name: risk_tier
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["HEALTHY", "WATCH", "AT_RISK", "CRITICAL", "LIQUIDATABLE"]
+      - name: position_count
+        tests: [not_null]
+      - name: pct_of_protocol_debt
+        tests: [not_null]
+
+  - name: fct_cascade_scenarios
+    description: >
+      Liquidation cascade simulation results for five ETH price shock scenarios.
+      Shows how much debt/collateral is at risk if ETH drops 10–50%.
+    columns:
+      - name: protocol
+        tests: [not_null]
+      - name: scenario_id
+        tests: [not_null]
+      - name: eth_price_shock_pct
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0.10, 0.20, 0.30, 0.40, 0.50]
+      - name: pct_positions_liquidatable
+        tests: [not_null]
+      - name: pct_debt_liquidatable
+        tests: [not_null]

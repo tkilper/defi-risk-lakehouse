@@ -1,0 +1,198 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+
+# Cancel in-progress runs for the same branch on new push
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Lint — ruff style check + format check
+  # ──────────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install ruff
+        run: pip install ruff==0.4.9
+
+      - name: ruff check (errors + imports)
+        run: ruff check .
+
+      - name: ruff format (check only)
+        run: ruff format --check .
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. Unit tests — pure Python, no Docker required
+  # ──────────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements-dev.txt') }}
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run unit tests
+        run: pytest tests/unit/ -v --tb=short -m "not integration" --cov=ingestion --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: coverage.xml
+          fail_ci_if_error: false
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. DAG integrity — validate Airflow DAG import (no Docker needed)
+  # ──────────────────────────────────────────────────────────────────────────
+  dag-tests:
+    name: DAG Integrity
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements-dev.txt') }}
+
+      - name: Install dependencies (incl. Airflow)
+        run: pip install -r requirements-dev.txt
+
+      - name: Run DAG integrity tests
+        env:
+          AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+          AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+        run: pytest tests/integration/test_dag_integrity.py -v --tb=short
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 4. dbt parse — validate SQL models without a live DB connection
+  # ──────────────────────────────────────────────────────────────────────────
+  dbt-parse:
+    name: dbt Parse
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ env.PYTHON_VERSION }}-dbt-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dbt
+        run: pip install dbt-core==1.9.0 dbt-trino==1.9.0
+
+      - name: dbt deps
+        working-directory: dbt/defi_risk
+        run: dbt deps
+
+      - name: dbt parse (validates SQL syntax + model DAG)
+        working-directory: dbt/defi_risk
+        env:
+          DBT_TARGET: local
+          TRINO_HOST: localhost
+          TRINO_PORT: "8081"
+        run: dbt parse --profiles-dir . --no-use-colors
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 5. Docker build — verify custom Airflow image builds successfully
+  # ──────────────────────────────────────────────────────────────────────────
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [unit-tests, dag-tests, dbt-parse]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Airflow image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/airflow/Dockerfile
+          push: false
+          tags: defi-risk-airflow:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 6. Integration tests — spin up Docker Compose, run full pipeline check
+  #    Only runs on push to main (not on feature branch PRs)
+  # ──────────────────────────────────────────────────────────────────────────
+  integration-tests:
+    name: Integration Tests (main only)
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env from example
+        run: cp .env.example .env
+
+      - name: Start services
+        run: docker compose up -d --build --wait
+        timeout-minutes: 10
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting for Airflow webserver..."
+          timeout 120 bash -c 'until curl -sf http://localhost:8080/health; do sleep 5; done'
+          echo "Waiting for Trino..."
+          timeout 120 bash -c 'until curl -sf http://localhost:8081/v1/info; do sleep 5; done'
+          echo "All services ready."
+
+      - name: Run integration tests inside Airflow scheduler container
+        run: |
+          docker compose exec -T airflow-scheduler \
+            pytest tests/integration/ -v -m integration --tb=short
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose logs --tail=100
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

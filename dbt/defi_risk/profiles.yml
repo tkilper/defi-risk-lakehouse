@@ -1,0 +1,27 @@
+defi_risk:
+  target: "{{ env_var('DBT_TARGET', 'prod') }}"
+  outputs:
+    # Production target — used by the Airflow scheduler inside Docker Compose
+    prod:
+      type: trino
+      method: none
+      host: "{{ env_var('TRINO_HOST', 'trino') }}"
+      port: "{{ env_var('TRINO_PORT', '8080') | int }}"
+      # "lakehouse" is the Trino catalog name (from trino/catalog/lakehouse.properties)
+      database: lakehouse
+      schema: gold
+      threads: 4
+      http_scheme: http
+      session_properties:
+        query_max_run_time: "20m"
+
+    # Local development target — Trino exposed on localhost:8081
+    local:
+      type: trino
+      method: none
+      host: localhost
+      port: 8081
+      database: lakehouse
+      schema: gold
+      threads: 2
+      http_scheme: http

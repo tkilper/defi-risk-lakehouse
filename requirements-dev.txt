@@ -1,0 +1,18 @@
+# =============================================================================
+# Development-only dependencies (not installed in Docker images)
+# =============================================================================
+
+-r requirements.txt
+
+# Testing
+pytest==8.2.2
+pytest-mock==3.14.0
+pytest-cov==5.0.0
+responses==0.25.3   # mock for requests
+
+# Airflow (needed for DAG import tests)
+apache-airflow==2.9.3
+apache-airflow-providers-apache-spark==4.8.0
+
+# Linting / formatting
+ruff==0.4.9

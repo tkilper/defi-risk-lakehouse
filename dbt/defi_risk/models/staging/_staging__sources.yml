@@ -1,0 +1,88 @@
+version: 2
+
+sources:
+  - name: silver
+    description: >
+      Normalised silver-layer Iceberg tables written by the Spark silver
+      transformer.  All USD values are computed at ingestion time using
+      oracle prices embedded in the subgraph responses.
+    database: lakehouse   # Trino catalog name
+    schema: silver        # Iceberg namespace / Trino schema
+
+    tables:
+      - name: aave_positions
+        description: >
+          Aave V3 Ethereum userReserves with non-zero debt, normalised to
+          human-readable token amounts and USD values.
+        columns:
+          - name: user_address
+            description: Ethereum address of the borrower (lowercase)
+          - name: reserve_address
+            description: Address of the underlying ERC-20 asset
+          - name: symbol
+            description: Token symbol (e.g. WETH, USDC, WBTC)
+          - name: decimals
+            description: ERC-20 decimals of the underlying asset
+          - name: liquidation_threshold
+            description: Fraction of collateral that counts toward HF numerator (0–1)
+          - name: ltv
+            description: Maximum loan-to-value ratio (0–1)
+          - name: liquidation_bonus
+            description: Bonus paid to liquidators as a fraction (e.g. 1.05 = 5% bonus)
+          - name: price_usd
+            description: USD price per token at ingestion time
+          - name: collateral_human
+            description: Collateral balance in token units
+          - name: variable_debt_human
+            description: Variable rate debt in token units
+          - name: stable_debt_human
+            description: Stable rate debt in token units
+          - name: collateral_usd
+            description: Collateral balance expressed in USD
+          - name: debt_usd
+            description: Total debt (variable + stable) expressed in USD
+          - name: is_collateral_enabled
+            description: Whether the user has enabled this reserve as collateral
+          - name: protocol
+            description: Always "aave_v3"
+          - name: ingestion_ts
+            description: Timestamp when the record was fetched
+          - name: ingestion_date
+            description: Date partition key
+
+      - name: compound_positions
+        description: >
+          Compound V3 positions with non-zero borrow balances, with collateral
+          aggregated across all collateral tokens per position.
+        columns:
+          - name: user_address
+          - name: reserve_address
+          - name: symbol
+          - name: collateral_usd
+          - name: debt_usd
+          - name: liquidation_threshold
+          - name: protocol
+          - name: ingestion_ts
+          - name: ingestion_date
+
+      - name: maker_vaults
+        description: >
+          MakerDAO CDP vaults with non-zero collateral and debt.
+          Debt is expressed in DAI (≈ USD).  Collateral is in USD using the
+          MakerDAO oracle "Next Price".
+        columns:
+          - name: user_address
+            description: Vault owner Ethereum address
+          - name: reserve_address
+            description: Collateral type ID (e.g. "ETH-A", "WBTC-B")
+          - name: symbol
+            description: Same as reserve_address for MakerDAO
+          - name: collateral_usd
+          - name: debt_usd
+            description: DAI debt (DAI ≈ $1)
+          - name: liquidation_threshold
+            description: 1 / liquidationRatio (derived for HF compatibility)
+          - name: protocol
+            description: Always "maker"
+          - name: ingestion_ts
+          - name: ingestion_date

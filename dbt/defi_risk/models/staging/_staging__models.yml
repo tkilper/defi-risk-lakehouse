@@ -1,0 +1,70 @@
+version: 2
+
+models:
+  - name: stg_aave__positions
+    description: >
+      Staging view for Aave V3 borrow positions.  One row per
+      (user_address, reserve_address, ingestion_date).  Only includes
+      positions where the reserve is enabled as collateral.
+    columns:
+      - name: user_address
+        description: Ethereum address of the borrower
+        tests:
+          - not_null
+      - name: asset_symbol
+        description: Token symbol
+        tests:
+          - not_null
+      - name: liquidation_threshold
+        description: Fraction used in HF numerator (0 < threshold <= 1)
+        tests:
+          - not_null
+      - name: collateral_usd
+        description: Collateral value in USD
+        tests:
+          - not_null
+      - name: debt_usd
+        description: Debt value in USD (must be > 0 for this model)
+        tests:
+          - not_null
+      - name: protocol
+        description: Always "aave_v3"
+        tests:
+          - accepted_values:
+              values: ["aave_v3"]
+
+  - name: stg_compound__positions
+    description: >
+      Staging view for Compound V3 borrow positions.
+    columns:
+      - name: user_address
+        tests:
+          - not_null
+      - name: collateral_usd
+        tests:
+          - not_null
+      - name: debt_usd
+        tests:
+          - not_null
+      - name: protocol
+        tests:
+          - accepted_values:
+              values: ["compound_v3"]
+
+  - name: stg_maker__vaults
+    description: >
+      Staging view for MakerDAO CDP vaults.
+    columns:
+      - name: user_address
+        tests:
+          - not_null
+      - name: collateral_usd
+        tests:
+          - not_null
+      - name: debt_usd
+        tests:
+          - not_null
+      - name: protocol
+        tests:
+          - accepted_values:
+              values: ["maker"]
