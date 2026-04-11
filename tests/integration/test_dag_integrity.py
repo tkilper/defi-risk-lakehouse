@@ -28,7 +28,9 @@ def _airflow_home(tmp_path_factory, monkeypatch):
     )
     monkeypatch.setenv("AIRFLOW__CORE__LOAD_EXAMPLES", "false")
     monkeypatch.setenv("AIRFLOW__CORE__EXECUTOR", "SequentialExecutor")
-    monkeypatch.setenv("PYTHONPATH", os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+    monkeypatch.setenv(
+        "PYTHONPATH", os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    )
 
 
 @pytest.fixture(scope="module")
@@ -43,9 +45,8 @@ def dag_bag():
 
 class TestDagImport:
     def test_no_import_errors(self, dag_bag):
-        assert dag_bag.import_errors == {}, (
-            "DAG import errors found:\n"
-            + "\n".join(f"  {k}: {v}" for k, v in dag_bag.import_errors.items())
+        assert dag_bag.import_errors == {}, "DAG import errors found:\n" + "\n".join(
+            f"  {k}: {v}" for k, v in dag_bag.import_errors.items()
         )
 
     def test_expected_dags_present(self, dag_bag):

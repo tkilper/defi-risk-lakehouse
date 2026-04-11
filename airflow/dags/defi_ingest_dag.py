@@ -49,6 +49,7 @@ default_args = {
 # Task callables
 # ---------------------------------------------------------------------------
 
+
 def fetch_aave(**context) -> int:
     client = AaveClient()
     records = client.fetch_borrow_positions()
@@ -110,7 +111,6 @@ with DAG(
     max_active_runs=1,
     tags=["defi", "ingestion", "thegraph"],
 ) as dag:
-
     t_aave = PythonOperator(
         task_id="fetch_aave_positions",
         python_callable=fetch_aave,

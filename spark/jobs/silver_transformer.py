@@ -33,8 +33,8 @@ from spark.jobs.utils import get_spark_session
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
-WAD = 1e18   # MakerDAO WAD unit
-RAD = 1e45   # MakerDAO RAD unit
+WAD = 1e18  # MakerDAO WAD unit
+RAD = 1e45  # MakerDAO RAD unit
 ETH_PRICE_ORACLE_SCALE = 1e18  # Aave priceInEth is scaled by 1e18
 
 # Hard-coded approximate ETH/USD price used only when oracle data is missing.
@@ -45,6 +45,7 @@ _FALLBACK_ETH_USD = 3_000.0
 # ---------------------------------------------------------------------------
 # Aave
 # ---------------------------------------------------------------------------
+
 
 def transform_aave(spark: SparkSession) -> DataFrame:
     """
@@ -152,6 +153,7 @@ def transform_aave(spark: SparkSession) -> DataFrame:
 # Compound
 # ---------------------------------------------------------------------------
 
+
 def transform_compound(spark: SparkSession) -> DataFrame:
     """
     Normalise Compound V3 raw positions into the silver schema.
@@ -163,8 +165,7 @@ def transform_compound(spark: SparkSession) -> DataFrame:
     raw = spark.read.table("nessie.bronze.compound_raw_positions")
 
     silver = (
-        raw
-        .withColumn("user_address", F.lower(F.col("account.id")))
+        raw.withColumn("user_address", F.lower(F.col("account.id")))
         .withColumn("symbol", F.col("market.inputToken.symbol"))
         .withColumn("decimals", F.col("market.inputToken.decimals").cast(IntegerType()))
         .withColumn("price_usd", F.col("market.inputToken.lastPriceUSD").cast(DoubleType()))
@@ -177,9 +178,11 @@ def transform_compound(spark: SparkSession) -> DataFrame:
             F.aggregate(
                 F.col("collateralTokens"),
                 F.lit(0.0).cast(DoubleType()),
-                lambda acc, x: acc
-                + x["collateralBalance"].cast(DoubleType())
-                * x["collateralToken"]["token"]["lastPriceUSD"].cast(DoubleType()),
+                lambda acc, x: (
+                    acc
+                    + x["collateralBalance"].cast(DoubleType())
+                    * x["collateralToken"]["token"]["lastPriceUSD"].cast(DoubleType())
+                ),
             ),
         )
         # Use weighted average liquidation factor as liquidation_threshold
@@ -188,10 +191,12 @@ def transform_compound(spark: SparkSession) -> DataFrame:
             F.aggregate(
                 F.col("collateralTokens"),
                 F.lit(0.0).cast(DoubleType()),
-                lambda acc, x: acc
-                + x["collateralBalance"].cast(DoubleType())
-                * x["collateralToken"]["token"]["lastPriceUSD"].cast(DoubleType())
-                * x["collateralToken"]["liquidationFactor"].cast(DoubleType()),
+                lambda acc, x: (
+                    acc
+                    + x["collateralBalance"].cast(DoubleType())
+                    * x["collateralToken"]["token"]["lastPriceUSD"].cast(DoubleType())
+                    * x["collateralToken"]["liquidationFactor"].cast(DoubleType())
+                ),
             )
             / F.when(F.col("total_collateral_usd") > 0, F.col("total_collateral_usd")).otherwise(
                 F.lit(1.0)
@@ -231,6 +236,7 @@ def transform_compound(spark: SparkSession) -> DataFrame:
 # MakerDAO
 # ---------------------------------------------------------------------------
 
+
 def transform_maker(spark: SparkSession) -> DataFrame:
     """
     Normalise MakerDAO vault data into the silver schema.
@@ -248,8 +254,7 @@ def transform_maker(spark: SparkSession) -> DataFrame:
     raw = spark.read.table("nessie.bronze.maker_raw_vaults")
 
     silver = (
-        raw
-        .withColumn("user_address", F.lower(F.col("owner.id")))
+        raw.withColumn("user_address", F.lower(F.col("owner.id")))
         .withColumn("reserve_address", F.col("collateralType.id"))
         .withColumn("symbol", F.col("collateralType.id"))
         .withColumn("decimals", F.lit(18))
@@ -312,6 +317,7 @@ def transform_maker(spark: SparkSession) -> DataFrame:
 # Write helper
 # ---------------------------------------------------------------------------
 
+
 def _write_silver(df: DataFrame, table_name: str) -> None:
     logger.info("Writing silver table nessie.silver.%s (%d rows)", table_name, df.count())
     (
@@ -327,6 +333,7 @@ def _write_silver(df: DataFrame, table_name: str) -> None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def run() -> None:
     spark = get_spark_session("DeFiRisk-SilverTransformer")

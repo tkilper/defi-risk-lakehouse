@@ -12,6 +12,7 @@ import pytest
 # (mirrors the dbt macro and Spark job logic)
 # ---------------------------------------------------------------------------
 
+
 def health_factor(collateral_usd: float, liq_threshold: float, debt_usd: float) -> float | None:
     """HF = (collateral_usd × liq_threshold) / debt_usd"""
     if debt_usd <= 0:
@@ -43,9 +44,7 @@ def shocked_health_factor(
     return health_factor(collateral_usd * (1.0 - shock_pct), liq_threshold, debt_usd)
 
 
-def collateral_buffer(
-    collateral_usd: float, liq_threshold: float, debt_usd: float
-) -> float:
+def collateral_buffer(collateral_usd: float, liq_threshold: float, debt_usd: float) -> float:
     """USD amount collateral can drop before HF = 1."""
     return collateral_usd - (debt_usd / liq_threshold)
 
@@ -53,6 +52,7 @@ def collateral_buffer(
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestHealthFactor:
     def test_healthy_position(self):
@@ -91,20 +91,23 @@ class TestHealthFactor:
 
 
 class TestRiskTierClassification:
-    @pytest.mark.parametrize("hf,expected", [
-        (None,  "NO_DEBT"),
-        (0.50,  "LIQUIDATABLE"),
-        (0.99,  "LIQUIDATABLE"),
-        (1.00,  "CRITICAL"),       # boundary: exactly 1.0 is CRITICAL (not liquidatable yet)
-        (1.04,  "CRITICAL"),
-        (1.05,  "AT_RISK"),
-        (1.09,  "AT_RISK"),
-        (1.10,  "WATCH"),
-        (1.24,  "WATCH"),
-        (1.25,  "HEALTHY"),
-        (2.00,  "HEALTHY"),
-        (100.0, "HEALTHY"),
-    ])
+    @pytest.mark.parametrize(
+        "hf,expected",
+        [
+            (None, "NO_DEBT"),
+            (0.50, "LIQUIDATABLE"),
+            (0.99, "LIQUIDATABLE"),
+            (1.00, "CRITICAL"),  # boundary: exactly 1.0 is CRITICAL (not liquidatable yet)
+            (1.04, "CRITICAL"),
+            (1.05, "AT_RISK"),
+            (1.09, "AT_RISK"),
+            (1.10, "WATCH"),
+            (1.24, "WATCH"),
+            (1.25, "HEALTHY"),
+            (2.00, "HEALTHY"),
+            (100.0, "HEALTHY"),
+        ],
+    )
     def test_tiers(self, hf, expected):
         assert classify_risk_tier(hf) == expected
 

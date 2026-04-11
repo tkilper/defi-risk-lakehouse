@@ -36,20 +36,24 @@ def get_spark_session(app_name: str) -> SparkSession:
         # ── JAR resolution ─────────────────────────────────────────────────
         .config(
             "spark.jars.packages",
-            ",".join([
-                "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1",
-                "org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.99.0",
-                "org.apache.iceberg:iceberg-aws-bundle:1.6.1",
-            ]),
+            ",".join(
+                [
+                    "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1",
+                    "org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.99.0",
+                    "org.apache.iceberg:iceberg-aws-bundle:1.6.1",
+                ]
+            ),
         )
         .config("spark.jars.ivy", "/tmp/.ivy2")
         # ── SQL extensions ─────────────────────────────────────────────────
         .config(
             "spark.sql.extensions",
-            ",".join([
-                "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
-                "org.projectnessie.spark.extensions.NessieSparkSessionExtensions",
-            ]),
+            ",".join(
+                [
+                    "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+                    "org.projectnessie.spark.extensions.NessieSparkSessionExtensions",
+                ]
+            ),
         )
         # ── Nessie catalog ─────────────────────────────────────────────────
         .config("spark.sql.catalog.nessie", "org.apache.iceberg.spark.SparkCatalog")

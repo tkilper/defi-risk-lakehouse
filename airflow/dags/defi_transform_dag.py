@@ -57,14 +57,10 @@ with DAG(
     max_active_runs=1,
     tags=["defi", "spark", "dbt", "iceberg"],
 ) as dag:
-
     # ── 1. Bronze: raw JSON → Iceberg bronze tables ──────────────────────────
     t_spark_bronze = BashOperator(
         task_id="spark_bronze",
-        bash_command=(
-            f"cd {SPARK_JOBS_DIR} && "
-            "PYTHONPATH=/opt/airflow python bronze_loader.py"
-        ),
+        bash_command=(f"cd {SPARK_JOBS_DIR} && PYTHONPATH=/opt/airflow python bronze_loader.py"),
         execution_timeout=timedelta(minutes=30),
     )
 
@@ -72,8 +68,7 @@ with DAG(
     t_spark_silver = BashOperator(
         task_id="spark_silver",
         bash_command=(
-            f"cd {SPARK_JOBS_DIR} && "
-            "PYTHONPATH=/opt/airflow python silver_transformer.py"
+            f"cd {SPARK_JOBS_DIR} && PYTHONPATH=/opt/airflow python silver_transformer.py"
         ),
         execution_timeout=timedelta(minutes=30),
     )

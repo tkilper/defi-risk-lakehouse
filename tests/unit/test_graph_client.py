@@ -19,6 +19,7 @@ SIMPLE_QUERY = "{ things(first: $first, skip: $skip) { id } }"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def make_response(data: dict, status: int = 200) -> dict:
     return {"data": data, "errors": None}
 
@@ -41,6 +42,7 @@ def register_page(
 # ---------------------------------------------------------------------------
 # Tests: execute()
 # ---------------------------------------------------------------------------
+
 
 class TestExecute:
     @resp_mock.activate
@@ -129,6 +131,7 @@ class TestExecute:
 # Tests: paginate()
 # ---------------------------------------------------------------------------
 
+
 class TestPaginate:
     @resp_mock.activate
     def test_single_page_returned_fully(self):
@@ -174,5 +177,7 @@ class TestPaginate:
         """Extra variables should be merged into the GraphQL request."""
         register_page("userReserves", [{"id": "1"}])
         client = GraphQLClient(FAKE_URL)
-        result = client.paginate(SIMPLE_QUERY, "userReserves", extra_vars={"where": {"debt_gt": "0"}})
+        result = client.paginate(
+            SIMPLE_QUERY, "userReserves", extra_vars={"where": {"debt_gt": "0"}}
+        )
         assert len(result) == 1

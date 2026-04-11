@@ -36,6 +36,7 @@ RAW_BASE = f"s3a://{BUCKET}/raw"
 # Schema helpers
 # ---------------------------------------------------------------------------
 
+
 def _read_ndjson(spark: SparkSession, protocol: str) -> DataFrame:
     """
     Read all raw NDJSON files for a protocol into a single DataFrame,
@@ -45,8 +46,7 @@ def _read_ndjson(spark: SparkSession, protocol: str) -> DataFrame:
     logger.info("Reading raw %s data from %s", protocol, path)
 
     df = (
-        spark.read
-        .option("multiline", "false")
+        spark.read.option("multiline", "false")
         .json(path)
         .withColumn("ingestion_ts", F.current_timestamp())
         .withColumn("ingestion_date", F.to_date(F.current_timestamp()))
@@ -77,6 +77,7 @@ def _write_bronze(df: DataFrame, table_name: str) -> None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def run() -> None:
     spark = get_spark_session("DeFiRisk-BronzeLoader")

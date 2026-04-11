@@ -8,6 +8,7 @@ import pytest
 # Environment setup for unit tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _set_default_env(monkeypatch):
     """

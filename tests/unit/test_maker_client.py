@@ -16,8 +16,8 @@ FAKE_VAULT = {
         "rate": "1050000000000000000000000000",  # 1.05 in 1e27 units
         "price": {"value": "3000.0"},
     },
-    "collateral": "5000000000000000000",   # 5 ETH in WAD
-    "debt": "10000000000000000000",         # 10 DAI in normalized units
+    "collateral": "5000000000000000000",  # 5 ETH in WAD
+    "debt": "10000000000000000000",  # 10 DAI in normalized units
     "openedAt": "1620000000",
     "updatedAt": "1650000000",
 }

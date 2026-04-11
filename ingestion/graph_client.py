@@ -84,7 +84,9 @@ class GraphQLClient:
 
                 if response.status_code == 429:
                     wait = self.backoff_base**attempt
-                    logger.warning("Rate limited (429). Waiting %.1fs before retry %d.", wait, attempt)
+                    logger.warning(
+                        "Rate limited (429). Waiting %.1fs before retry %d.", wait, attempt
+                    )
                     time.sleep(wait)
                     continue
 
