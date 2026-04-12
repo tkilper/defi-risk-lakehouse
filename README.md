@@ -1,6 +1,6 @@
 # DeFi Risk Lakehouse
 
-A production-grade data engineering portfolio project that tracks open borrow
+A production-grade lakehouse architecture that tracks open borrow
 positions across **Aave V3**, **Compound V3**, and **MakerDAO** via The Graph
 subgraph APIs, computes health factors and collateral-at-risk, and models
 liquidation cascade scenarios (e.g. impact of a 20% ETH price drop on
