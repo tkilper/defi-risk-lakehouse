@@ -196,7 +196,7 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Run integration tests
-        run: pytest tests/integration/ -v -m integration --tb=short
+        run: pytest tests/integration/ -v --tb=short
 
       - name: Dump service logs on failure
         if: failure()
