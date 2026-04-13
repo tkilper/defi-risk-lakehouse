@@ -173,7 +173,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Start services
-        run: docker compose up -d --build --wait
+        run: docker compose up -d --build
         timeout-minutes: 10
 
       - name: Dump airflow-init logs
