@@ -139,6 +139,7 @@ services:
       minio:
         condition: service_healthy
     healthcheck:
+      start_period: 300s
       test: ["CMD", "curl", "-f", "http://localhost:8080/v1/info"]
       interval: 15s
       timeout: 10s
