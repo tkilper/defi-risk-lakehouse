@@ -37,6 +37,7 @@ default_args = {
 }
 
 DBT_DIR = "/opt/airflow/dbt/defi_risk"
+DBT_BIN = "/opt/airflow/dbt-venv/bin/dbt"
 SPARK_JOBS_DIR = "/opt/airflow/spark/jobs"
 
 
@@ -77,7 +78,7 @@ with DAG(
     t_dbt_run = BashOperator(
         task_id="dbt_run",
         bash_command=(
-            f"dbt run "
+            f"{DBT_BIN} run "
             f"--project-dir {DBT_DIR} "
             f"--profiles-dir {DBT_DIR} "
             f"--target prod "
@@ -90,7 +91,7 @@ with DAG(
     t_dbt_test = BashOperator(
         task_id="dbt_test",
         bash_command=(
-            f"dbt test "
+            f"{DBT_BIN} test "
             f"--project-dir {DBT_DIR} "
             f"--profiles-dir {DBT_DIR} "
             f"--target prod "

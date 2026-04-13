@@ -16,6 +16,5 @@ gql[requests]==3.5.0
 pyarrow==16.1.0
 pyspark==3.5.1
 
-# dbt + Trino adapter
-dbt-core==1.9.0
-dbt-trino==1.9.0
+# dbt + Trino adapter are installed in an isolated virtualenv (/opt/airflow/dbt-venv)
+# in the Dockerfile to avoid a protobuf version conflict with Airflow 2.9.3.
