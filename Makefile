@@ -4,7 +4,6 @@
 # Usage: make <target>
 # Run `make help` to list all available targets.
 
-SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 COMPOSE := docker compose
@@ -20,17 +19,17 @@ GREEN := \033[32m
 
 .PHONY: init
 init: ## First-time project setup: copy .env, build images, start services
-	@test -f .env || (cp .env.example .env && echo "Created .env from .env.example — add your GRAPH_API_KEY")
+	@python -c "import os, shutil; (shutil.copy('.env.example', '.env'), print('Created .env from .env.example — add your GRAPH_API_KEY')) if not os.path.exists('.env') else None"
 	$(COMPOSE) build --pull
 	$(MAKE) up
-	@echo "Waiting 45s for services to become healthy..."
-	@sleep 45
-	@echo "$(GREEN)$(BOLD)Environment ready!$(RESET)"
-	@echo "  Airflow UI  →  http://localhost:8080  (admin / admin)"
-	@echo "  Trino UI    →  http://localhost:8081"
-	@echo "  MinIO UI    →  http://localhost:9001  (minioadmin / minioadmin)"
-	@echo "  Spark UI    →  http://localhost:8082"
-	@echo "  Nessie API  →  http://localhost:19120/api/v2/config"
+	@echo Waiting 45s for services to become healthy...
+	@python -c "import time; time.sleep(45)"
+	@echo Environment ready!
+	@echo   Airflow UI  -^>  http://localhost:8080  (admin / admin)
+	@echo   Trino UI    -^>  http://localhost:8081
+	@echo   MinIO UI    -^>  http://localhost:9001  (minioadmin / minioadmin)
+	@echo   Spark UI    -^>  http://localhost:8082
+	@echo   Nessie API  -^>  http://localhost:19120/api/v2/config
 
 .PHONY: build
 build: ## Rebuild custom Airflow Docker image
@@ -93,8 +92,8 @@ test-unit: ## Run unit tests (no Docker required)
 
 .PHONY: test-integration
 test-integration: up ## Start services then run integration tests
-	@echo "Waiting 45s for services to be ready..."
-	@sleep 45
+	@echo Waiting 45s for services to be ready...
+	@python -c "import time; time.sleep(45)"
 	$(AIRFLOW_SCHEDULER) pytest tests/integration/ -v -m integration --tb=short
 	$(MAKE) down
 
@@ -148,7 +147,7 @@ trigger-transform: ## Trigger the Spark + dbt transform DAG in Airflow
 .PHONY: spark-bronze
 spark-bronze: ## Manually run the bronze Spark loader job
 	$(COMPOSE) exec spark-master \
-	  spark-submit \
+	  /opt/spark/bin/spark-submit \
 	    --master spark://spark-master:7077 \
 	    --conf spark.driver.memory=1g \
 	    /opt/spark/jobs/bronze_loader.py
@@ -156,7 +155,7 @@ spark-bronze: ## Manually run the bronze Spark loader job
 .PHONY: spark-silver
 spark-silver: ## Manually run the silver Spark transformer job
 	$(COMPOSE) exec spark-master \
-	  spark-submit \
+	  /opt/spark/bin/spark-submit \
 	    --master spark://spark-master:7077 \
 	    --conf spark.driver.memory=1g \
 	    /opt/spark/jobs/silver_transformer.py

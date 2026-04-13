@@ -67,6 +67,9 @@ query GetBorrowPositions($first: Int!, $skip: Int!) {
       totalLiquidity
       availableLiquidity
       utilizationRate
+      liquidityRate
+      variableBorrowRate
+      stableBorrowRate
     }
     # Collateral balance (in underlying asset units, scaled by the aToken index)
     currentATokenBalance
@@ -75,9 +78,6 @@ query GetBorrowPositions($first: Int!, $skip: Int!) {
     currentStableDebt
     # True only if the user has explicitly enabled this reserve as collateral
     usageAsCollateralEnabledOnUser
-    liquidityRate
-    variableBorrowRate
-    stableBorrowRate
   }
 }
 """

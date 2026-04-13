@@ -25,7 +25,7 @@ from ingestion.graph_client import GraphQLClient
 
 logger = logging.getLogger(__name__)
 
-_SUBGRAPH_ID = "G1KHEQkA7shnPZahHUmKcerfpqBMNnL9xJzWGAVrj7n7"
+_SUBGRAPH_ID = "8sE6rTNkPhzZXZC6c8UQy2ghFTu5PPdGauwUBm4t7HZ1"
 _HOSTED_URL = "https://api.thegraph.com/subgraphs/name/protofire/maker-protocol"
 _GATEWAY_URL = f"https://gateway.thegraph.com/api/{{api_key}}/subgraphs/id/{_SUBGRAPH_ID}"
 

@@ -23,7 +23,9 @@ import sys
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
-from spark.jobs.utils import get_spark_session
+
+sys.path.insert(0, "/opt/spark/jobs")
+from utils import get_spark_session
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
