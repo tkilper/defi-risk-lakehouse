@@ -186,18 +186,16 @@ services:
   airflow-init:
     <<: *airflow-common
     container_name: defi-airflow-init
-    command: >
-      bash -c "
-        airflow db migrate &&
-        airflow users create \
-          --username admin \
-          --firstname Admin \
-          --lastname User \
-          --role Admin \
-          --email admin@example.com \
-          --password admin \
-        || echo 'User already exists, skipping.'
-      "
+    command: >-
+      bash -c "airflow db migrate &&
+      (airflow users create
+      --username admin
+      --firstname Admin
+      --lastname User
+      --role Admin
+      --email admin@example.com
+      --password admin
+      || echo 'User already exists, skipping.')"
     restart: "no"
 
   # ── Airflow Webserver ──────────────────────────────────────────────────────
