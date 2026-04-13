@@ -192,10 +192,11 @@ jobs:
           timeout 120 bash -c 'until curl -sf http://localhost:8081/v1/info; do sleep 5; done'
           echo "All services ready."
 
-      - name: Run integration tests inside Airflow scheduler container
-        run: |
-          docker compose exec -T airflow-scheduler \
-            pytest tests/integration/ -v -m integration --tb=short
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run integration tests
+        run: pytest tests/integration/ -v -m integration --tb=short
 
       - name: Dump service logs on failure
         if: failure()
