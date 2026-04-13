@@ -1,4 +1,3 @@
-version: "3.9"
 
 # ---------------------------------------------------------------------------
 # Shared Airflow config applied to all Airflow services
@@ -148,7 +147,7 @@ services:
 
   # ── Spark Master ──────────────────────────────────────────────────────────
   spark-master:
-    image: bitnami/spark:3.5.1
+    image: bitnami/spark:3.5
     container_name: defi-spark-master
     environment:
       SPARK_MODE: master
@@ -165,7 +164,7 @@ services:
 
   # ── Spark Worker ──────────────────────────────────────────────────────────
   spark-worker:
-    image: bitnami/spark:3.5.1
+    image: bitnami/spark:3.5
     container_name: defi-spark-worker
     environment:
       SPARK_MODE: worker
