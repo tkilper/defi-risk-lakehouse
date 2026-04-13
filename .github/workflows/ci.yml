@@ -180,6 +180,10 @@ jobs:
         if: always()
         run: docker compose logs airflow-init
 
+      - name: Dump trino logs
+        if: always()
+        run: docker compose logs trino
+
       - name: Wait for services to be healthy
         run: |
           echo "Waiting for Airflow webserver..."
