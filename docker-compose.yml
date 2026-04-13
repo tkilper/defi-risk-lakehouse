@@ -147,7 +147,7 @@ services:
 
   # ── Spark Master ──────────────────────────────────────────────────────────
   spark-master:
-    image: bitnami/spark:latest
+    image: bitnamisecure/spark:latest
     container_name: defi-spark-master
     environment:
       SPARK_MODE: master
@@ -164,7 +164,7 @@ services:
 
   # ── Spark Worker ──────────────────────────────────────────────────────────
   spark-worker:
-    image: bitnami/spark:latest
+    image: bitnamisecure/spark:latest
     container_name: defi-spark-worker
     environment:
       SPARK_MODE: worker
