@@ -22,7 +22,9 @@ ENV PATH="${JAVA_HOME}/bin:${PATH}"
 USER airflow
 
 COPY requirements-airflow.txt /tmp/requirements-airflow.txt
-RUN pip install --no-cache-dir -r /tmp/requirements-airflow.txt
+RUN pip install --no-cache-dir \
+    --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt" \
+    -r /tmp/requirements-airflow.txt
 
 # Copy project source so it's available to Airflow tasks at runtime.
 # The dags/ directory is bind-mounted at runtime; everything else is baked in.

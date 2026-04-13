@@ -210,13 +210,27 @@ GitHub Actions pipeline (`.github/workflows/ci.yml`):
 
 ---
 
-## Key Technology Choices
+## Why this is important
 
-| Concern | Choice | Why |
-|---|---|---|
-| Iceberg catalog | Nessie | Git-like branching for data; both Spark and Trino share the same catalog via REST |
-| Object storage | MinIO | Free S3-compatible, runs in Docker |
-| SQL engine | Trino | dbt-trino is mature; Trino reads Iceberg via the same Nessie REST catalog Spark writes to |
-| Spark ↔ Trino data sharing | Nessie REST catalog | Both engines point at the same Nessie server; data written by Spark is immediately queryable by Trino with no additional registration step |
-| Airflow executor | LocalExecutor | Zero-overhead for local dev; production-equivalent by just changing `AIRFLOW__CORE__EXECUTOR` |
-| Spark JARs | `iceberg-aws-bundle` | Avoids classpath conflicts; the AWS SDK v2-based bundle is the Iceberg project's official recommendation for Iceberg 1.5+ |
+DeFi lending protocols (Aave, Compound, Maker) are overcollateralized — you must deposit more value than you borrow. There's no credit check or legal enforcement, so the collateral is the guarantee. If collateral value falls far enough that it no longer covers the debt, the protocol has a bad debt problem. To prevent that, protocols let liquidators (bots, arbitrageurs) step in and repay a portion of an underwater position   in exchange for the collateral at a discount. This is the liquidation mechanism — it's what keeps the protocol solvent.
+
+Health factor is the early warning signal for that process. A position at HF 1.02 is one bad hour in the ETH market away from being liquidated.
+
+---
+## Why tracking this at scale matters
+
+Individual liquidations are routine and healthy. The systemic risk is cascade liquidations — a scenario where:
+
+1. ETH drops 15% quickly
+2. Thousands of positions cross HF < 1.0 simultaneously
+3. Liquidators sell the seized ETH collateral to cover the debt
+4. That selling pressure pushes ETH down further
+5. Which liquidates more positions
+6. Repeat
+
+This is what happened in March 2020 ("Black Thursday") when MakerDAO accrued ~$4M in bad debt in hours, and again in May 2021 and November 2022. In each case, the aggregate picture, how many positions are clustered near HF 1.0, how much collateral is concentrated in correlated assets, was more important than any individual position.
+
+---
+## What this project is actually doing
+
+The fct_cascade_scenarios model runs stress tests across the whole borrower population: "if ETH drops 10%, 20%, 30%, how much collateral gets liquidated, how many positions flip, what's the protocol's total exposure?" to let end users evaluate borrower risk in cascade scenarios.

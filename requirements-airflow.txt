@@ -8,10 +8,10 @@ apache-airflow-providers-apache-spark==4.8.0
 apache-airflow-providers-amazon==8.18.0
 
 # Core deps (also in requirements.txt for local dev parity)
-requests==2.32.3
+# requests, boto3, botocore are omitted here — they are provided transitively
+# by the Airflow base image and apache-airflow-providers-amazon respectively.
+# Pinning them here creates a three-way conflict the pip resolver cannot escape.
 gql[requests]==3.5.0
-boto3==1.34.110
-botocore==1.34.110
 pyarrow==16.1.0
 pyspark==3.5.1
 
