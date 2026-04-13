@@ -148,35 +148,34 @@ services:
 
   # ── Spark Master ──────────────────────────────────────────────────────────
   spark-master:
-    image: bitnamilegacy/spark:latest
+    image: apache/spark:3.5.1
     container_name: defi-spark-master
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "-h", "spark-master"]
+    user: root
     environment:
-      SPARK_MODE: master
       SPARK_MASTER_HOST: spark-master
     ports:
       - "7077:7077"   # Spark master
       - "8082:8080"   # Spark master UI → http://localhost:8082
     volumes:
       - ./spark/jobs:/opt/spark/jobs
-      - ./spark/conf/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+      - ./spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
     networks:
       - defi-net
     restart: unless-stopped
 
   # ── Spark Worker ──────────────────────────────────────────────────────────
   spark-worker:
-    image: bitnamilegacy/spark:latest
+    image: apache/spark:3.5.1
     container_name: defi-spark-worker
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    user: root
     environment:
-      SPARK_MODE: worker
-      SPARK_MASTER_URL: spark://spark-master:7077
       SPARK_WORKER_MEMORY: 2G
-      SPARK_WORKER_CORES: 2
-      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
-      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_WORKER_CORES: "2"
     volumes:
       - ./spark/jobs:/opt/spark/jobs
-      - ./spark/conf/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+      - ./spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
     networks:
       - defi-net
     depends_on:

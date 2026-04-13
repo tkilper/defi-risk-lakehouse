@@ -176,6 +176,10 @@ jobs:
         run: docker compose up -d --build --wait
         timeout-minutes: 10
 
+      - name: Dump airflow-init logs
+        if: always()
+        run: docker compose logs airflow-init
+
       - name: Wait for services to be healthy
         run: |
           echo "Waiting for Airflow webserver..."
