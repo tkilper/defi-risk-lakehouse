@@ -8,7 +8,8 @@
       "WebFetch(domain:thegraph.com)",
       "WebFetch(domain:iceberg.apache.org)",
       "WebFetch(domain:medium.com)",
-      "WebFetch(domain:docs.aave.com)"
+      "WebFetch(domain:docs.aave.com)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt\")"
     ]
   }
 }

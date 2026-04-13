@@ -3,9 +3,10 @@
 # (on top of the base apache/airflow image which already has Airflow itself)
 # =============================================================================
 
-# Airflow providers
-apache-airflow-providers-apache-spark==4.8.0
-apache-airflow-providers-amazon==8.18.0
+# Airflow providers — versions are constrained by the Airflow constraints file
+# in the Dockerfile, so no pins needed here.
+apache-airflow-providers-apache-spark
+apache-airflow-providers-amazon
 
 # Core deps (also in requirements.txt for local dev parity)
 # requests, boto3, botocore are omitted here — they are provided transitively
