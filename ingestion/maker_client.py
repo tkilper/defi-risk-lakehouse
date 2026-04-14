@@ -4,15 +4,14 @@ MakerDAO ingestion client.
 Queries the MakerDAO Ethereum subgraph for all active CDP vaults.
 MakerDAO uses a vault/CDP model where users lock collateral to mint DAI.
 
-Subgraph: https://thegraph.com/explorer/subgraphs/G1KHEQkA7shnPZahHUmKcerfpqBMNnL9xJzWGAVrj7n7
+Subgraph: https://thegraph.com/explorer/subgraphs/8sE6rTNkPhzZXZC6c8UQy2ghFTu5PPdGauwUBm4t7HZ1
 
-Key units
----------
-- collateral: WAD (1e18 scaled integer)
-- debt (art): DAI normalised debt units; multiply by collateral type ``rate``
-  to get actual DAI owed
-- liquidationRatio: decimal (e.g. 1.5 = 150% collateralisation required)
-- price: USD price of the collateral asset from the MakerDAO oracle
+Schema notes (Messari):
+- Each vault is split into two position records per (account, market):
+    side=COLLATERAL: balance = collateral locked
+    side=BORROWER:   balance = DAI minted
+- Balances are already in human units (no WAD/RAD conversion needed).
+- market.liquidationThreshold is already normalised to a 0–1 decimal.
 """
 
 from __future__ import annotations
@@ -32,40 +31,33 @@ _GATEWAY_URL = f"https://gateway.thegraph.com/api/{{api_key}}/subgraphs/id/{_SUB
 # ---------------------------------------------------------------------------
 # GraphQL query
 # ---------------------------------------------------------------------------
-_VAULTS_QUERY = """
-query GetMakerVaults($first: Int!, $skip: Int!) {
-  vaults(
+_POSITIONS_QUERY = """
+query GetMakerPositions($first: Int!, $skip: Int!) {
+  positions(
     first: $first
     skip: $skip
-    where: {
-      collateral_gt: "0"
-      debt_gt: "0"
-    }
+    where: { balance_gt: "0" }
     orderBy: id
     orderDirection: asc
   ) {
     id
-    cdpId
-    owner {
+    account {
       id
     }
-    collateralType {
+    market {
       id
-      # e.g. "ETH-A", "WBTC-B", "USDC-A"
-      liquidationRatio
-      # Stability fee accumulator — multiply art by rate to get DAI owed
-      rate
-      # Current oracle price (MakerDAO Next Price, USD)
-      price {
-        value
+      name
+      inputToken {
+        id
+        symbol
+        decimals
+        lastPriceUSD
       }
+      liquidationThreshold
     }
-    # Raw collateral locked in the vault (WAD = 1e18 units)
-    collateral
-    # Normalised debt (DAI, art units). Actual DAI = art * collateralType.rate
-    debt
-    openedAt
-    updatedAt
+    balance
+    side
+    isCollateral
   }
 }
 """
@@ -83,16 +75,16 @@ class MakerClient:
 
     def fetch_active_vaults(self) -> list[dict[str, Any]]:
         """
-        Return all vaults with non-zero collateral and debt.
+        Return all positions (both COLLATERAL and BORROWER sides) with
+        non-zero balances.
 
-        Each record includes the owner address, collateral type (ilk) with
-        liquidation ratio and current oracle price, and the raw collateral /
-        debt amounts that the silver Spark job converts to USD.
+        The silver Spark job joins the two sides on (account, market) to
+        reconstruct full vault views with collateral and debt.
         """
-        logger.info("Fetching MakerDAO active vaults...")
+        logger.info("Fetching MakerDAO positions...")
         records = self._client.paginate(
-            query_template=_VAULTS_QUERY,
-            data_key="vaults",
+            query_template=_POSITIONS_QUERY,
+            data_key="positions",
         )
-        logger.info("MakerDAO: fetched %d active vaults.", len(records))
+        logger.info("MakerDAO: fetched %d position records.", len(records))
         return records

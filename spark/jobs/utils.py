@@ -41,6 +41,7 @@ def get_spark_session(app_name: str) -> SparkSession:
                     "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1",
                     "org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.99.0",
                     "org.apache.iceberg:iceberg-aws-bundle:1.6.1",
+                    "org.apache.hadoop:hadoop-aws:3.3.4",
                 ]
             ),
         )

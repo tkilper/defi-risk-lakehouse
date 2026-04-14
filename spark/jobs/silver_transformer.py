@@ -35,18 +35,16 @@ from utils import get_spark_session
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
-WAD = 1e18  # MakerDAO WAD unit
-RAD = 1e45  # MakerDAO RAD unit
 ETH_PRICE_ORACLE_SCALE = 1e18  # Aave priceInEth is scaled by 1e18
 
 # Hard-coded approximate ETH/USD price used only when oracle data is missing.
 # In production, fetch this from a price oracle or Chainlink.
 _FALLBACK_ETH_USD = 3_000.0
 
-# Fallback USD prices for Compound V3 tokens.
-# The Messari Compound V3 subgraph does not reliably populate lastPriceUsd;
+# Fallback USD prices for Compound V3 and MakerDAO tokens.
+# Messari subgraphs do not reliably populate lastPriceUsd;
 # these approximate values are used when the subgraph returns 0.
-_COMPOUND_FALLBACK_PRICES_USD: dict[str, float] = {
+_FALLBACK_PRICES_USD: dict[str, float] = {
     "USDC": 1.0,
     "USDT": 1.0,
     "DAI": 1.0,
@@ -224,7 +222,7 @@ def transform_compound(spark: SparkSession) -> DataFrame:
     - accounting.collateralBalances[].balance (was collateralTokens[].collateralBalance)
     - collateralToken.liquidateCollateralFactor used for threshold (not liquidationFactor)
 
-    Prices fall back to _COMPOUND_FALLBACK_PRICES_USD when lastPriceUsd = 0.
+    Prices fall back to _FALLBACK_PRICES_USD when lastPriceUsd = 0.
     """
     logger.info("Transforming Compound bronze → silver")
     raw = spark.read.table("nessie.bronze.compound_raw_positions")
@@ -233,12 +231,12 @@ def transform_compound(spark: SparkSession) -> DataFrame:
     fallback_map = F.create_map(
         *[
             item
-            for pair in [(F.lit(k), F.lit(v)) for k, v in _COMPOUND_FALLBACK_PRICES_USD.items()]
+            for pair in [(F.lit(k), F.lit(v)) for k, v in _FALLBACK_PRICES_USD.items()]
             for item in pair
         ]
     )
 
-    resolve_collateral = _collateral_resolver_udf(_COMPOUND_FALLBACK_PRICES_USD)
+    resolve_collateral = _collateral_resolver_udf(_FALLBACK_PRICES_USD)
 
     base_price_col = F.col("market.configuration.baseToken.token.lastPriceUsd").cast(DoubleType())
     base_symbol_col = F.col("market.configuration.baseToken.token.symbol")
@@ -301,65 +299,72 @@ def transform_compound(spark: SparkSession) -> DataFrame:
 
 def transform_maker(spark: SparkSession) -> DataFrame:
     """
-    Normalise MakerDAO vault data into the silver schema.
+    Normalise MakerDAO positions into the silver schema.
 
-    Calculations
-    ------------
-    actual_dai_debt = debt (art) * collateralType.rate   (RAD units → DAI)
-    collateral_usd  = collateral (WAD / 1e18) * price.value
-    debt_usd        = actual_dai_debt (DAI ≈ $1)
-    liquidation_threshold = 1 / liquidationRatio
-      (MakerDAO uses collateralisation ratio, not liquidation threshold;
-       HF = collateral_usd / (debt_usd * liquidationRatio))
+    The Messari subgraph splits each vault into two position records:
+      - side=COLLATERAL: balance = collateral locked (human units)
+      - side=BORROWER:   balance = DAI minted (human units)
+
+    We join on (account_id, market_id) to reconstruct the full vault view.
+    market.liquidationThreshold is already normalised to a 0–1 decimal.
+    Prices fall back to _FALLBACK_PRICES_USD when lastPriceUsd = 0.
     """
     logger.info("Transforming Maker bronze → silver")
     raw = spark.read.table("nessie.bronze.maker_raw_vaults")
 
+    fallback_map = F.create_map(
+        *[item for pair in
+          [(F.lit(k), F.lit(v)) for k, v in _FALLBACK_PRICES_USD.items()]
+          for item in pair]
+    )
+
+    collateral_df = (
+        raw.filter(F.col("side") == "COLLATERAL")
+        .select(
+            F.lower(F.col("account.id")).alias("account_id"),
+            F.col("market.id").alias("market_id"),
+            F.col("market.name").alias("symbol"),
+            F.col("market.inputToken.decimals").cast(IntegerType()).alias("decimals"),
+            F.col("market.inputToken.symbol").alias("token_symbol"),
+            F.col("market.inputToken.lastPriceUSD").cast(DoubleType()).alias("raw_price_usd"),
+            F.col("market.liquidationThreshold").cast(DoubleType()).alias("liquidation_threshold"),
+            F.col("balance").cast(DoubleType()).alias("collateral_balance"),
+            F.col("ingestion_ts"),
+            F.col("ingestion_date"),
+        )
+    )
+
+    borrower_df = (
+        raw.filter(F.col("side") == "BORROWER")
+        .select(
+            F.lower(F.col("account.id")).alias("account_id"),
+            F.col("market.id").alias("market_id"),
+            F.col("balance").cast(DoubleType()).alias("dai_debt"),
+        )
+    )
+
     silver = (
-        raw.withColumn("user_address", F.lower(F.col("owner.id")))
-        .withColumn("reserve_address", F.col("collateralType.id"))
-        .withColumn("symbol", F.col("collateralType.id"))
-        .withColumn("decimals", F.lit(18))
-        # Oracle price (USD)
-        .withColumn("price_usd", F.col("collateralType.price.value").cast(DoubleType()))
-        # Collateral: WAD (1e18 units) → human amount
+        collateral_df.join(borrower_df, on=["account_id", "market_id"], how="inner")
         .withColumn(
-            "collateral_human",
-            F.col("collateral").cast(DoubleType()) / WAD,
+            "price_usd",
+            F.when(F.col("raw_price_usd") > 0, F.col("raw_price_usd"))
+             .otherwise(F.coalesce(fallback_map[F.col("token_symbol")], F.lit(0.0))),
         )
-        # Actual DAI debt: art * rate (rate is in RAD/WAD = 1e27 units)
-        .withColumn(
-            "dai_debt",
-            F.col("debt").cast(DoubleType())
-            * F.col("collateralType.rate").cast(DoubleType())
-            / 1e27,
-        )
-        # USD values
-        .withColumn("collateral_usd", F.col("collateral_human") * F.col("price_usd"))
+        .withColumn("collateral_usd", F.col("collateral_balance") * F.col("price_usd"))
         .withColumn("debt_usd", F.col("dai_debt"))  # DAI ≈ $1
-        # MakerDAO liquidation ratio is the MINIMUM collateralisation ratio.
-        # liquidation_threshold for HF purposes = 1 / liquidationRatio
-        .withColumn(
-            "liquidation_ratio",
-            F.col("collateralType.liquidationRatio").cast(DoubleType()),
-        )
-        .withColumn(
-            "liquidation_threshold",
-            F.lit(1.0) / F.col("liquidation_ratio"),
-        )
         .withColumn("ltv", F.lit(None).cast(DoubleType()))
         .withColumn("liquidation_bonus", F.lit(None).cast(DoubleType()))
         .withColumn("protocol", F.lit("maker"))
         .select(
-            "user_address",
-            "reserve_address",
+            F.col("account_id").alias("user_address"),
+            F.col("market_id").alias("reserve_address"),
             "symbol",
             "decimals",
             "liquidation_threshold",
             "ltv",
             "liquidation_bonus",
             "price_usd",
-            "collateral_human",
+            F.col("collateral_balance").alias("collateral_human"),
             F.lit(None).cast(DoubleType()).alias("variable_debt_human"),
             F.lit(None).cast(DoubleType()).alias("stable_debt_human"),
             "collateral_usd",

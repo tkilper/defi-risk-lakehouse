@@ -23,14 +23,17 @@ with source as (
     from {{ source('silver', 'aave_positions') }}
 ),
 
-deduped as (
-    select *
-    from source
-    qualify
+ranked as (
+    select *,
         row_number() over (
             partition by user_address, reserve_address, ingestion_date
             order by ingestion_ts desc
-        ) = 1
+        ) as _rn
+    from source
+),
+
+deduped as (
+    select * from ranked where _rn = 1
 ),
 
 final as (

@@ -78,6 +78,10 @@ with DAG(
     t_dbt_run = BashOperator(
         task_id="dbt_run",
         bash_command=(
+            f"{DBT_BIN} deps "
+            f"--project-dir {DBT_DIR} "
+            f"--profiles-dir {DBT_DIR} "
+            f"&& "
             f"{DBT_BIN} run "
             f"--project-dir {DBT_DIR} "
             f"--profiles-dir {DBT_DIR} "
