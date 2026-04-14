@@ -313,42 +313,39 @@ def transform_maker(spark: SparkSession) -> DataFrame:
     raw = spark.read.table("nessie.bronze.maker_raw_vaults")
 
     fallback_map = F.create_map(
-        *[item for pair in
-          [(F.lit(k), F.lit(v)) for k, v in _FALLBACK_PRICES_USD.items()]
-          for item in pair]
+        *[
+            item
+            for pair in [(F.lit(k), F.lit(v)) for k, v in _FALLBACK_PRICES_USD.items()]
+            for item in pair
+        ]
     )
 
-    collateral_df = (
-        raw.filter(F.col("side") == "COLLATERAL")
-        .select(
-            F.lower(F.col("account.id")).alias("account_id"),
-            F.col("market.id").alias("market_id"),
-            F.col("market.name").alias("symbol"),
-            F.col("market.inputToken.decimals").cast(IntegerType()).alias("decimals"),
-            F.col("market.inputToken.symbol").alias("token_symbol"),
-            F.col("market.inputToken.lastPriceUSD").cast(DoubleType()).alias("raw_price_usd"),
-            F.col("market.liquidationThreshold").cast(DoubleType()).alias("liquidation_threshold"),
-            F.col("balance").cast(DoubleType()).alias("collateral_balance"),
-            F.col("ingestion_ts"),
-            F.col("ingestion_date"),
-        )
+    collateral_df = raw.filter(F.col("side") == "COLLATERAL").select(
+        F.lower(F.col("account.id")).alias("account_id"),
+        F.col("market.id").alias("market_id"),
+        F.col("market.name").alias("symbol"),
+        F.col("market.inputToken.decimals").cast(IntegerType()).alias("decimals"),
+        F.col("market.inputToken.symbol").alias("token_symbol"),
+        F.col("market.inputToken.lastPriceUSD").cast(DoubleType()).alias("raw_price_usd"),
+        F.col("market.liquidationThreshold").cast(DoubleType()).alias("liquidation_threshold"),
+        F.col("balance").cast(DoubleType()).alias("collateral_balance"),
+        F.col("ingestion_ts"),
+        F.col("ingestion_date"),
     )
 
-    borrower_df = (
-        raw.filter(F.col("side") == "BORROWER")
-        .select(
-            F.lower(F.col("account.id")).alias("account_id"),
-            F.col("market.id").alias("market_id"),
-            F.col("balance").cast(DoubleType()).alias("dai_debt"),
-        )
+    borrower_df = raw.filter(F.col("side") == "BORROWER").select(
+        F.lower(F.col("account.id")).alias("account_id"),
+        F.col("market.id").alias("market_id"),
+        F.col("balance").cast(DoubleType()).alias("dai_debt"),
     )
 
     silver = (
         collateral_df.join(borrower_df, on=["account_id", "market_id"], how="inner")
         .withColumn(
             "price_usd",
-            F.when(F.col("raw_price_usd") > 0, F.col("raw_price_usd"))
-             .otherwise(F.coalesce(fallback_map[F.col("token_symbol")], F.lit(0.0))),
+            F.when(F.col("raw_price_usd") > 0, F.col("raw_price_usd")).otherwise(
+                F.coalesce(fallback_map[F.col("token_symbol")], F.lit(0.0))
+            ),
         )
         .withColumn("collateral_usd", F.col("collateral_balance") * F.col("price_usd"))
         .withColumn("debt_usd", F.col("dai_debt"))  # DAI ≈ $1
