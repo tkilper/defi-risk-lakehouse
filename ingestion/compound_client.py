@@ -6,6 +6,13 @@ balances.  Compound V3 uses an isolated market model (USDC and ETH markets
 on Ethereum mainnet).
 
 Subgraph: https://thegraph.com/explorer/subgraphs/5nwMCSHaTqG3Kd2gHznbTXEnZ9QNWsssQfbHhDqQSQFp
+
+Schema notes (Messari v2):
+- Borrowers have negative accounting.basePrincipal; suppliers are positive.
+- Collateral is in accounting.collateralBalances (not a top-level field).
+- market.configuration.baseToken replaces the old market.inputToken.
+- liquidateCollateralFactor is the liquidation trigger threshold;
+  liquidationFactor is the penalty applied during liquidation.
 """
 
 from __future__ import annotations
@@ -30,7 +37,7 @@ query GetCompoundPositions($first: Int!, $skip: Int!) {
   positions(
     first: $first
     skip: $skip
-    where: { borrowBalance_gt: "0" }
+    where: { accounting_: { basePrincipal_lt: "0" } }
     orderBy: id
     orderDirection: asc
   ) {
@@ -40,38 +47,33 @@ query GetCompoundPositions($first: Int!, $skip: Int!) {
     }
     market {
       id
-      name
-      inputToken {
-        id
-        symbol
-        decimals
-        lastPriceUSD
-      }
-    }
-    # Collateral assets posted by this account
-    collateralTokens {
-      collateralToken {
-        token {
-          id
-          symbol
-          decimals
-          lastPriceUSD
+      configuration {
+        baseToken {
+          token {
+            id
+            symbol
+            decimals
+            lastPriceUsd
+          }
         }
-        liquidationFactor
-        collateralFactor
       }
-      collateralBalance
     }
-    borrowBalance
-    depositBalance
-    isCollateral
-    rates {
-      rate
-      side
-      type
+    accounting {
+      basePrincipal
+      collateralBalances {
+        balance
+        collateralToken {
+          liquidateCollateralFactor
+          liquidationFactor
+          token {
+            id
+            symbol
+            decimals
+            lastPriceUsd
+          }
+        }
+      }
     }
-    timestampOpened
-    timestampClosed
   }
 }
 """

@@ -27,7 +27,7 @@ import sys
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import DoubleType, IntegerType
+from pyspark.sql.types import DoubleType, IntegerType, StructField, StructType
 
 sys.path.insert(0, "/opt/spark/jobs")
 from utils import get_spark_session
@@ -42,6 +42,24 @@ ETH_PRICE_ORACLE_SCALE = 1e18  # Aave priceInEth is scaled by 1e18
 # Hard-coded approximate ETH/USD price used only when oracle data is missing.
 # In production, fetch this from a price oracle or Chainlink.
 _FALLBACK_ETH_USD = 3_000.0
+
+# Fallback USD prices for Compound V3 tokens.
+# The Messari Compound V3 subgraph does not reliably populate lastPriceUsd;
+# these approximate values are used when the subgraph returns 0.
+_COMPOUND_FALLBACK_PRICES_USD: dict[str, float] = {
+    "USDC":   1.0,
+    "USDT":   1.0,
+    "DAI":    1.0,
+    "ETH":    3_000.0,
+    "WETH":   3_000.0,
+    "WBTC":  65_000.0,
+    "LINK":   15.0,
+    "UNI":    10.0,
+    "COMP":   55.0,
+    "wstETH": 3_300.0,
+    "cbETH":  3_100.0,
+    "wUSDM":  1.0,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -156,60 +174,96 @@ def transform_aave(spark: SparkSession) -> DataFrame:
 # ---------------------------------------------------------------------------
 
 
+def _collateral_resolver_udf(fallback_prices: dict[str, float]):
+    """
+    Returns a UDF that aggregates a Compound V3 ``accounting.collateralBalances``
+    array into (collateral_usd, liquidation_threshold), applying fallback prices
+    when the subgraph returns lastPriceUsd = 0.
+
+    Uses ``liquidateCollateralFactor`` (the threshold at which liquidation is
+    triggered) rather than ``liquidationFactor`` (the liquidation penalty).
+    """
+    _schema = StructType([
+        StructField("collateral_usd", DoubleType()),
+        StructField("liquidation_threshold", DoubleType()),
+    ])
+
+    @F.udf(returnType=_schema)
+    def _compute(balances):
+        if not balances:
+            return (0.0, None)
+        total_usd = 0.0
+        weighted_lf = 0.0
+        for b in balances:
+            balance = float(b["balance"] or 0)
+            if balance == 0.0:
+                continue
+            token = b["collateralToken"]["token"]
+            price = float(token["lastPriceUsd"] or 0)
+            if price == 0.0:
+                price = fallback_prices.get(token["symbol"] or "", 0.0)
+            lf = float(b["collateralToken"]["liquidateCollateralFactor"] or 0)
+            usd = balance * price
+            total_usd += usd
+            weighted_lf += usd * lf
+        liq_threshold = weighted_lf / total_usd if total_usd > 0 else None
+        return (total_usd, liq_threshold)
+
+    return _compute
+
+
 def transform_compound(spark: SparkSession) -> DataFrame:
     """
     Normalise Compound V3 raw positions into the silver schema.
 
-    Compound V3 records already include USD price via ``lastPriceUSD``.
-    Collateral is stored as an array; we aggregate it here.
+    Schema changes from the Messari subgraph (new vs old):
+    - market.configuration.baseToken.token.*  (was market.inputToken.*)
+    - accounting.basePrincipal                (was borrowBalance; negative = debt)
+    - accounting.collateralBalances[].balance (was collateralTokens[].collateralBalance)
+    - collateralToken.liquidateCollateralFactor used for threshold (not liquidationFactor)
+
+    Prices fall back to _COMPOUND_FALLBACK_PRICES_USD when lastPriceUsd = 0.
     """
     logger.info("Transforming Compound bronze → silver")
     raw = spark.read.table("nessie.bronze.compound_raw_positions")
 
+    # Spark map for base-token price fallback lookup
+    fallback_map = F.create_map(
+        *[item for pair in
+          [(F.lit(k), F.lit(v)) for k, v in _COMPOUND_FALLBACK_PRICES_USD.items()]
+          for item in pair]
+    )
+
+    resolve_collateral = _collateral_resolver_udf(_COMPOUND_FALLBACK_PRICES_USD)
+
+    base_price_col = F.col("market.configuration.baseToken.token.lastPriceUsd").cast(DoubleType())
+    base_symbol_col = F.col("market.configuration.baseToken.token.symbol")
+
     silver = (
-        raw.withColumn("user_address", F.lower(F.col("account.id")))
-        .withColumn("symbol", F.col("market.inputToken.symbol"))
-        .withColumn("decimals", F.col("market.inputToken.decimals").cast(IntegerType()))
-        .withColumn("price_usd", F.col("market.inputToken.lastPriceUSD").cast(DoubleType()))
-        # Borrow balance (already in human units from Messari subgraph)
-        .withColumn("borrow_balance", F.col("borrowBalance").cast(DoubleType()))
+        raw
+        .withColumn("user_address", F.lower(F.col("account.id")))
+        .withColumn("symbol", base_symbol_col)
+        .withColumn("decimals", F.col("market.configuration.baseToken.token.decimals").cast(IntegerType()))
+        # Base token price with fallback
+        .withColumn(
+            "price_usd",
+            F.when(base_price_col > 0, base_price_col)
+             .otherwise(F.coalesce(fallback_map[base_symbol_col], F.lit(0.0))),
+        )
+        # basePrincipal is negative for borrowers; abs() gives the debt amount
+        .withColumn(
+            "borrow_balance",
+            F.abs(F.col("accounting.basePrincipal").cast(DoubleType())),
+        )
         .withColumn("debt_usd", F.col("borrow_balance") * F.col("price_usd"))
-        # Aggregate collateral across all collateral tokens
-        .withColumn(
-            "total_collateral_usd",
-            F.aggregate(
-                F.col("collateralTokens"),
-                F.lit(0.0).cast(DoubleType()),
-                lambda acc, x: (
-                    acc
-                    + x["collateralBalance"].cast(DoubleType())
-                    * x["collateralToken"]["token"]["lastPriceUSD"].cast(DoubleType())
-                ),
-            ),
-        )
-        # Use weighted average liquidation factor as liquidation_threshold
-        .withColumn(
-            "liquidation_threshold",
-            F.aggregate(
-                F.col("collateralTokens"),
-                F.lit(0.0).cast(DoubleType()),
-                lambda acc, x: (
-                    acc
-                    + x["collateralBalance"].cast(DoubleType())
-                    * x["collateralToken"]["token"]["lastPriceUSD"].cast(DoubleType())
-                    * x["collateralToken"]["liquidationFactor"].cast(DoubleType())
-                ),
-            )
-            / F.when(F.col("total_collateral_usd") > 0, F.col("total_collateral_usd")).otherwise(
-                F.lit(1.0)
-            ),
-        )
-        .withColumnRenamed("total_collateral_usd", "collateral_usd")
+        # Collateral array → (collateral_usd, liquidation_threshold) via UDF
+        .withColumn("_collateral", resolve_collateral(F.col("accounting.collateralBalances")))
+        .withColumn("collateral_usd", F.col("_collateral.collateral_usd"))
+        .withColumn("liquidation_threshold", F.col("_collateral.liquidation_threshold"))
         .withColumn("ltv", F.lit(None).cast(DoubleType()))
         .withColumn("liquidation_bonus", F.lit(None).cast(DoubleType()))
-        .withColumn("collateral_human", F.col("depositBalance").cast(DoubleType()))
+        .withColumn("collateral_human", F.lit(None).cast(DoubleType()))
         .withColumn("protocol", F.lit("compound_v3"))
-        .withColumn("ingestion_date", F.col("ingestion_date"))
         .select(
             "user_address",
             F.col("market.id").alias("reserve_address"),
@@ -224,7 +278,7 @@ def transform_compound(spark: SparkSession) -> DataFrame:
             F.lit(None).cast(DoubleType()).alias("stable_debt_human"),
             "collateral_usd",
             "debt_usd",
-            F.col("isCollateral").alias("is_collateral_enabled"),
+            F.lit(True).alias("is_collateral_enabled"),
             "protocol",
             "ingestion_ts",
             "ingestion_date",
