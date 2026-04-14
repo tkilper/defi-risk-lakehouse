@@ -47,18 +47,18 @@ _FALLBACK_ETH_USD = 3_000.0
 # The Messari Compound V3 subgraph does not reliably populate lastPriceUsd;
 # these approximate values are used when the subgraph returns 0.
 _COMPOUND_FALLBACK_PRICES_USD: dict[str, float] = {
-    "USDC":   1.0,
-    "USDT":   1.0,
-    "DAI":    1.0,
-    "ETH":    3_000.0,
-    "WETH":   3_000.0,
-    "WBTC":  65_000.0,
-    "LINK":   15.0,
-    "UNI":    10.0,
-    "COMP":   55.0,
+    "USDC": 1.0,
+    "USDT": 1.0,
+    "DAI": 1.0,
+    "ETH": 3_000.0,
+    "WETH": 3_000.0,
+    "WBTC": 65_000.0,
+    "LINK": 15.0,
+    "UNI": 10.0,
+    "COMP": 55.0,
     "wstETH": 3_300.0,
-    "cbETH":  3_100.0,
-    "wUSDM":  1.0,
+    "cbETH": 3_100.0,
+    "wUSDM": 1.0,
 }
 
 
@@ -183,10 +183,12 @@ def _collateral_resolver_udf(fallback_prices: dict[str, float]):
     Uses ``liquidateCollateralFactor`` (the threshold at which liquidation is
     triggered) rather than ``liquidationFactor`` (the liquidation penalty).
     """
-    _schema = StructType([
-        StructField("collateral_usd", DoubleType()),
-        StructField("liquidation_threshold", DoubleType()),
-    ])
+    _schema = StructType(
+        [
+            StructField("collateral_usd", DoubleType()),
+            StructField("liquidation_threshold", DoubleType()),
+        ]
+    )
 
     @F.udf(returnType=_schema)
     def _compute(balances):
@@ -229,9 +231,11 @@ def transform_compound(spark: SparkSession) -> DataFrame:
 
     # Spark map for base-token price fallback lookup
     fallback_map = F.create_map(
-        *[item for pair in
-          [(F.lit(k), F.lit(v)) for k, v in _COMPOUND_FALLBACK_PRICES_USD.items()]
-          for item in pair]
+        *[
+            item
+            for pair in [(F.lit(k), F.lit(v)) for k, v in _COMPOUND_FALLBACK_PRICES_USD.items()]
+            for item in pair
+        ]
     )
 
     resolve_collateral = _collateral_resolver_udf(_COMPOUND_FALLBACK_PRICES_USD)
@@ -240,15 +244,17 @@ def transform_compound(spark: SparkSession) -> DataFrame:
     base_symbol_col = F.col("market.configuration.baseToken.token.symbol")
 
     silver = (
-        raw
-        .withColumn("user_address", F.lower(F.col("account.id")))
+        raw.withColumn("user_address", F.lower(F.col("account.id")))
         .withColumn("symbol", base_symbol_col)
-        .withColumn("decimals", F.col("market.configuration.baseToken.token.decimals").cast(IntegerType()))
+        .withColumn(
+            "decimals", F.col("market.configuration.baseToken.token.decimals").cast(IntegerType())
+        )
         # Base token price with fallback
         .withColumn(
             "price_usd",
-            F.when(base_price_col > 0, base_price_col)
-             .otherwise(F.coalesce(fallback_map[base_symbol_col], F.lit(0.0))),
+            F.when(base_price_col > 0, base_price_col).otherwise(
+                F.coalesce(fallback_map[base_symbol_col], F.lit(0.0))
+            ),
         )
         # basePrincipal is negative for borrowers; abs() gives the debt amount
         .withColumn(
