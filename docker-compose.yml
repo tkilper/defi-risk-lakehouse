@@ -109,7 +109,7 @@ services:
     ports:
       - "19120:19120"  # REST API + Iceberg REST catalog
     environment:
-      NESSIE_VERSION_STORE_TYPE: IN_MEMORY
+      NESSIE_VERSION_STORE_TYPE: ROCKSDB
       QUARKUS_HTTP_PORT: 19120
       NESSIE_CATALOG_DEFAULT_WAREHOUSE: default
       NESSIE_CATALOG_WAREHOUSES__DEFAULT__LOCATION: "s3://lakehouse/warehouse"
@@ -118,6 +118,7 @@ services:
       AWS_REGION: "us-east-1"
     volumes:
       - ./nessie/application.properties:/deployments/config/application.properties:ro
+      - nessie-data:/deployments/data
     networks:
       - defi-net
     healthcheck:
@@ -254,6 +255,7 @@ services:
 volumes:
   postgres-data:
   minio-data:
+  nessie-data:
   airflow-logs:
 
 # ---------------------------------------------------------------------------

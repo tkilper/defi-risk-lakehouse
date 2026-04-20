@@ -21,14 +21,12 @@ clean-targets:
 # ---------------------------------------------------------------------------
 models:
   defi_risk:
-    # Staging — lightweight views over silver Iceberg tables
     staging:
-      +materialized: view
+      +materialized: table
       +schema: silver
 
-    # Intermediate — aggregated views (no storage cost)
     intermediate:
-      +materialized: view
+      +materialized: table
       +schema: silver
 
     # Marts — physical Iceberg tables written by Trino INSERT INTO SELECT
