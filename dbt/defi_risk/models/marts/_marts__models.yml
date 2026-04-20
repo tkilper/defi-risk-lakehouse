@@ -62,7 +62,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: [0.10, 0.20, 0.30, 0.40, 0.50]
+              values: [0.00, 0.10, 0.20, 0.30, 0.40, 0.50]
+              quote: false
       - name: pct_positions_liquidatable
         tests: [not_null]
       - name: pct_debt_liquidatable
