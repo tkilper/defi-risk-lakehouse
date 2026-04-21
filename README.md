@@ -6,9 +6,6 @@ subgraph APIs, computes health factors and collateral-at-risk, and models
 liquidation cascade scenarios (e.g. impact of a 20% ETH price drop on
 protocol solvency).
 
-Everything runs locally via **Docker Compose** — 100% free, no cloud accounts
-required.
-
 ---
 
 ## Architecture
@@ -75,11 +72,10 @@ cd defi-risk-lakehouse
 make init
 ```
 
-### 2. (Optional) Add a The Graph API key
+### 2. Add a The Graph API key
 
-The ingestion clients work without an API key using the hosted service,
-but a free key from [thegraph.com/studio](https://thegraph.com/studio)
-gives you 100K queries/month on the decentralised network.
+Add a free key from [thegraph.com/studio](https://thegraph.com/studio)
+to gain access to API calls on the decentralised network.
 
 ```bash
 # Edit .env and set:
@@ -212,14 +208,14 @@ GitHub Actions pipeline (`.github/workflows/ci.yml`):
 
 ## Why this is important
 
-DeFi lending protocols (Aave, Compound, Maker) are overcollateralized — you must deposit more value than you borrow. There's no credit check or legal enforcement, so the collateral is the guarantee. If collateral value falls far enough that it no longer covers the debt, the protocol has a bad debt problem. To prevent that, protocols let liquidators (bots, arbitrageurs) step in and repay a portion of an underwater position   in exchange for the collateral at a discount. This is the liquidation mechanism — it's what keeps the protocol solvent.
+DeFi (Decentralized Finance) lending protocols (Aave, Compound, Maker) are overcollateralized: you must deposit more value than you borrow. There's no credit check or legal enforcement, so the collateral is the guarantee. If collateral value falls far enough that it no longer covers the debt, the protocol has a bad debt problem. To prevent this, protocols let liquidators (bots, arbitrageurs) step in and repay a portion of an underwater position in exchange for the collateral at a discount.
 
-Health factor is the early warning signal for that process. A position at HF 1.02 is one bad hour in the ETH market away from being liquidated.
+Health factor (collateral / debt) is the early warning signal for this process. A position at HF 1.02 is one bad hour in the ETH market away from being liquidated.
 
 ---
 ## Why tracking this at scale matters
 
-Individual liquidations are routine and healthy. The systemic risk is cascade liquidations — a scenario where:
+Individual liquidations are routine and healthy. The systemic risk is from cascade liquidations, which is a scenario where:
 
 1. ETH drops 15% quickly
 2. Thousands of positions cross HF < 1.0 simultaneously
@@ -233,4 +229,4 @@ This is what happened in March 2020 ("Black Thursday") when MakerDAO accrued ~$4
 ---
 ## What this project is actually doing
 
-The fct_cascade_scenarios model runs stress tests across the whole borrower population: "if ETH drops 10%, 20%, 30%, how much collateral gets liquidated, how many positions flip, what's the protocol's total exposure?" to let end users evaluate borrower risk in cascade scenarios.
+This project provides data models to track the Health Factors and collateral at risk across lending protocols. The fct_cascade_scenarios model runs stress tests across the whole borrower population: "if ETH drops 10%, 20%, 30%, how much collateral gets liquidated, how many positions flip, what's the protocol's total exposure?" to enable end users to evaluate borrower risk in cascade scenarios.
