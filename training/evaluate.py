@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -29,19 +28,17 @@ import mlflow.xgboost
 import numpy as np
 import pandas as pd
 import shap
-import trino
 
 matplotlib.use("Agg")  # non-interactive backend for server environments
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 from features.feature_definitions import ALL_FEATURES, LABEL_COL
+
 from training.train import (
     EXPERIMENT_NAME,
-    MODEL_REGISTRY_NAME,
     MLFLOW_TRACKING_URI,
-    TRINO_HOST,
-    TRINO_PORT,
+    MODEL_REGISTRY_NAME,
     compute_metrics,
     load_features_from_trino,
 )

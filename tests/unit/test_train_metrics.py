@@ -19,7 +19,6 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-
 # ---------------------------------------------------------------------------
 # Inline reimplementation of compute_metrics (mirrors training/train.py)
 # Kept here so the test file is self-contained — no heavy train.py imports.

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -25,10 +24,8 @@ import optuna
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from features.feature_definitions import ALL_FEATURES, LABEL_COL
 from training.train import (
     EXPERIMENT_NAME,
-    MODEL_REGISTRY_NAME,
     MLFLOW_TRACKING_URI,
     load_features_from_trino,
     run_time_series_cv,

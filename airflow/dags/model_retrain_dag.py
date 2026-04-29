@@ -30,7 +30,6 @@ import os
 import subprocess
 import sys
 from datetime import timedelta
-from pathlib import Path
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
@@ -112,7 +111,6 @@ def snapshot_training_data(**context) -> str:
 
 def train_model(**context) -> str:
     """Run the XGBoost training script and push the new run ID to XCom."""
-    import mlflow
 
     data_path = context["ti"].xcom_pull(task_ids="dvc_snapshot", key="data_path")
 

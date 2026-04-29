@@ -25,7 +25,6 @@ import logging
 import os
 import subprocess
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 import mlflow
@@ -39,7 +38,6 @@ from sklearn.metrics import (
     average_precision_score,
     brier_score_loss,
     f1_score,
-    precision_score,
     roc_auc_score,
 )
 from sklearn.model_selection import TimeSeriesSplit
@@ -269,10 +267,7 @@ def train(
     xgb_params = params or DEFAULT_XGB_PARAMS
 
     # Load data
-    if data_path:
-        df = load_features_from_parquet(data_path)
-    else:
-        df = load_features_from_trino()
+    df = load_features_from_parquet(data_path) if data_path else load_features_from_trino()
 
     if len(df) == 0:
         raise ValueError("No training data loaded. Run the feature pipeline first.")
@@ -308,7 +303,7 @@ def train(
         )
 
         # Log mean CV metrics
-        for metric_name in cv_metrics[0].keys():
+        for metric_name in cv_metrics[0]:
             mean_val = np.mean([m[metric_name] for m in cv_metrics])
             mlflow.log_metric(f"cv_mean_{metric_name}", mean_val)
 

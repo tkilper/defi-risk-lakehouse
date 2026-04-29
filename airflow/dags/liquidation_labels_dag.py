@@ -29,8 +29,8 @@ from airflow.utils.dates import days_ago
 
 sys.path.insert(0, "/opt/airflow")
 
-from ingestion.liquidation_client import AaveLiquidationClient
 from ingestion.compound_liq_client import CompoundLiquidationClient
+from ingestion.liquidation_client import AaveLiquidationClient
 from ingestion.maker_liq_client import MakerLiquidationClient
 from ingestion.s3_writer import write_raw_records
 

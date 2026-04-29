@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-
 # ---------------------------------------------------------------------------
 # Inline batch window generator
 # (mirrors the while loop in scripts/backfill_labels.py)
@@ -110,7 +109,7 @@ class TestBackfillErrorHandling:
         windows = generate_batch_windows(start_ts, end_ts, batch_days)
         effect_iter = iter(fetch_side_effects)
 
-        for batch_start, batch_end in windows:
+        for _batch_start, _batch_end in windows:
             effect = next(effect_iter, [])
             try:
                 if isinstance(effect, Exception):

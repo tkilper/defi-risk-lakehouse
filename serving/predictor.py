@@ -12,7 +12,6 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
-import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 

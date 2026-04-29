@@ -6,17 +6,16 @@ Tests use a mocked XGBoost model — no MLflow connection required.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-
+from pydantic import ValidationError
 from serving.predictor import (
     LiquidationPredictor,
     PositionFeatures,
     get_risk_tier,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -134,19 +133,19 @@ class TestProbabilityOutput:
 
 class TestInputValidation:
     def test_negative_health_factor_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             _make_valid_features(health_factor=-1.0)
 
     def test_zero_health_factor_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             _make_valid_features(health_factor=0.0)
 
     def test_missing_required_field_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             PositionFeatures()  # health_factor is required
 
     def test_string_health_factor_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             PositionFeatures(health_factor="not-a-number", collateral_usd=0, debt_usd=0)  # type: ignore
 
 

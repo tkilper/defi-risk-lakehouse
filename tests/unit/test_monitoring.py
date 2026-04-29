@@ -10,7 +10,6 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Inline reimplementation of run_prediction_drift_report logic
 # (mirrors monitoring/drift_report.py — kept inline to avoid importing

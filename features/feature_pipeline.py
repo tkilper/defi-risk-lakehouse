@@ -135,10 +135,6 @@ def add_health_factor_trends(df: DataFrame) -> DataFrame:
 
     Uses a row-based window ordered by snapshot_time within each user+protocol group.
     """
-    user_time_window = Window.partitionBy("user_address", "protocol").orderBy(
-        F.col("snapshot_time").cast(LongType())
-    )
-
     # Approximate 6h and 24h lookback using rangeBetween (seconds)
     window_6h = Window.partitionBy("user_address", "protocol").orderBy(
         F.col("snapshot_time").cast(LongType())
