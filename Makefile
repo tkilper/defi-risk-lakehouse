@@ -166,6 +166,126 @@ spark-silver: ## Manually run the silver Spark transformer job
 trino-shell: ## Open a Trino SQL shell
 	$(COMPOSE) exec trino trino --catalog lakehouse
 
+##@ Spark Jobs (ML Extension)
+
+.PHONY: spark-bronze-liq
+spark-bronze-liq: ## Run bronze liquidations Spark job
+	$(COMPOSE) exec spark-master \
+	  /opt/spark/bin/spark-submit \
+	    --master spark://spark-master:7077 \
+	    --conf spark.driver.memory=1g \
+	    /opt/spark/jobs/bronze_liquidations.py
+
+.PHONY: spark-silver-liq
+spark-silver-liq: ## Run silver liquidations Spark job
+	$(COMPOSE) exec spark-master \
+	  /opt/spark/bin/spark-submit \
+	    --master spark://spark-master:7077 \
+	    --conf spark.driver.memory=1g \
+	    /opt/spark/jobs/silver_liquidations.py
+
+.PHONY: spark-snapshots
+spark-snapshots: ## Run position snapshots Spark job
+	$(COMPOSE) exec spark-master \
+	  /opt/spark/bin/spark-submit \
+	    --master spark://spark-master:7077 \
+	    --conf spark.driver.memory=1g \
+	    /opt/spark/jobs/silver_position_snapshots.py
+
+##@ ML Pipeline
+
+.PHONY: backfill
+backfill: ## Backfill 90 days of historical liquidation events
+	python scripts/backfill_labels.py --days 90
+
+.PHONY: ingest-liquidations
+ingest-liquidations: ## Trigger the liquidation labels Airflow DAG
+	$(AIRFLOW_SCHEDULER) airflow dags trigger liquidation_labels
+
+.PHONY: features
+features: ## Trigger the feature engineering Airflow DAG
+	$(AIRFLOW_SCHEDULER) airflow dags trigger feature_engineering
+
+.PHONY: train
+train: ## Train the XGBoost liquidation predictor
+	python training/train.py
+
+.PHONY: tune
+tune: ## Run Optuna hyperparameter search (50 trials)
+	python training/hyperparameter_search.py --n-trials 50
+
+.PHONY: evaluate
+evaluate: ## Evaluate Production model and generate SHAP plots
+	python training/evaluate.py
+
+.PHONY: score
+score: ## Trigger batch scoring Airflow DAG
+	$(AIRFLOW_SCHEDULER) airflow dags trigger batch_score
+
+.PHONY: retrain
+retrain: ## Trigger model retraining Airflow DAG
+	$(AIRFLOW_SCHEDULER) airflow dags trigger model_retrain
+
+.PHONY: monitor
+monitor: ## Run Evidently drift monitoring report
+	python monitoring/drift_report.py
+
+##@ Model Serving
+
+.PHONY: serve
+serve: ## Start the prediction API container
+	$(COMPOSE) up -d api
+
+.PHONY: predict
+predict: ## Score a sample position via the API (uses sample_position.json)
+	curl -s -X POST http://localhost:8000/predict \
+	  -H "Content-Type: application/json" \
+	  -d '{"health_factor":1.08,"collateral_usd":10000,"debt_usd":8500,"ltv_ratio":0.85,"liquidation_threshold":0.80,"protocol_encoded":0,"num_collateral_assets":1,"largest_collateral_pct":1.0,"is_eth_dominant_collateral":1,"user_prior_liquidations":0}' \
+	  | python -m json.tool
+
+.PHONY: reload-model
+reload-model: ## Hot-reload the model in the running API container
+	curl -s -X POST http://localhost:8000/reload | python -m json.tool
+
+.PHONY: api-health
+api-health: ## Check the API health endpoint
+	curl -s http://localhost:8000/health | python -m json.tool
+
+##@ Data Versioning (DVC)
+
+.PHONY: dvc-push
+dvc-push: ## Push data artifacts to MinIO DVC remote
+	dvc push
+
+.PHONY: dvc-pull
+dvc-pull: ## Pull data artifacts from MinIO DVC remote
+	dvc pull
+
+.PHONY: dvc-init
+dvc-init: ## Initialize DVC with MinIO as remote (run once)
+	dvc init
+	dvc remote add -d minio s3://dvc-artifacts/
+	dvc remote modify minio endpointurl http://localhost:9000
+	dvc remote modify minio access_key_id minioadmin
+	dvc remote modify minio secret_access_key minioadmin
+
+##@ UI Links
+
+.PHONY: mlflow-ui
+mlflow-ui: ## Open MLflow UI in browser
+	@echo "MLflow UI: http://localhost:5000"
+	@python -c "import webbrowser; webbrowser.open('http://localhost:5000')" 2>/dev/null || true
+
+.PHONY: airflow-ui
+airflow-ui: ## Open Airflow UI in browser
+	@echo "Airflow UI: http://localhost:8080 (admin / admin)"
+	@python -c "import webbrowser; webbrowser.open('http://localhost:8080')" 2>/dev/null || true
+
+.PHONY: minio-ui
+minio-ui: ## Open MinIO console in browser
+	@echo "MinIO UI: http://localhost:9001 (minioadmin / minioadmin)"
+	@python -c "import webbrowser; webbrowser.open('http://localhost:9001')" 2>/dev/null || true
+
 ##@ Help
 
 .PHONY: help

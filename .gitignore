@@ -220,9 +220,13 @@ dbt/*/.user.yml
 # Spark
 spark/jobs/__pycache__/
 
-# Data files
-data/
-*.parquet
+# Data files — parquets tracked by DVC, not git
+data/*.parquet
+data/*.csv
+
+# ML reports (HTML, generated artifacts)
+reports/*.html
+reports/*.png
 
 # Docker
 docker/airflow/__pycache__/
@@ -232,3 +236,13 @@ docker/airflow/__pycache__/
 htmlcov/
 .coverage
 coverage.xml
+
+# DVC
+.dvc/cache/
+.dvc/tmp/
+
+# MLflow local artifacts
+mlruns/
+
+# detect-secrets baseline (committed, but ignore changes if not a CI update)
+# .secrets.baseline

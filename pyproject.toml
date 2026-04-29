@@ -1,7 +1,7 @@
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["ingestion", "spark", "airflow", "scripts"]
+src = ["ingestion", "spark", "airflow", "scripts", "features", "training", "serving", "monitoring"]
 
 [tool.ruff.lint]
 select = [

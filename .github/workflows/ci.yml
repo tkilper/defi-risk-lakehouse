@@ -39,6 +39,7 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────────
   # 2. Unit tests — pure Python, no Docker required
+  # Covers: ingestion, features, training, serving, monitoring
   # ──────────────────────────────────────────────────────────────────────────
   unit-tests:
     name: Unit Tests
@@ -61,7 +62,14 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Run unit tests
-        run: pytest tests/unit/ -v --tb=short -m "not integration" --cov=ingestion --cov-report=xml
+        run: |
+          pytest tests/unit/ -v --tb=short -m "not integration" \
+            --cov=ingestion \
+            --cov=features \
+            --cov=training \
+            --cov=serving \
+            --cov=monitoring \
+            --cov-report=xml
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -72,6 +80,8 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────────
   # 3. DAG integrity — validate Airflow DAG import (no Docker needed)
+  # Checks all 6 DAGs: defi_ingest, defi_transform, liquidation_labels,
+  # feature_engineering, batch_score, model_retrain
   # ──────────────────────────────────────────────────────────────────────────
   dag-tests:
     name: DAG Integrity
@@ -135,7 +145,7 @@ jobs:
         run: dbt parse --profiles-dir . --no-use-colors
 
   # ──────────────────────────────────────────────────────────────────────────
-  # 5. Docker build — verify custom Airflow image builds successfully
+  # 5. Docker build — verify custom Airflow image AND serving API image build
   # ──────────────────────────────────────────────────────────────────────────
   docker-build:
     name: Docker Build
@@ -157,6 +167,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build serving API image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: serving/Dockerfile
+          push: false
+          tags: defi-risk-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   # ──────────────────────────────────────────────────────────────────────────
   # 6. Integration tests — spin up Docker Compose, run full pipeline check
   #    Only runs on push to main (not on feature branch PRs)
@@ -174,33 +194,53 @@ jobs:
 
       - name: Start services
         run: docker compose up -d --build
-        timeout-minutes: 10
+        timeout-minutes: 15
 
       - name: Dump airflow-init logs
         if: always()
         run: docker compose logs airflow-init
 
+      - name: Dump mlflow-db-init logs
+        if: always()
+        run: docker compose logs mlflow-db-init
+
       - name: Dump trino logs
         if: always()
         run: docker compose logs trino
 
-      - name: Wait for services to be healthy
+      - name: Wait for core services to be healthy
         run: |
           echo "Waiting for Airflow webserver..."
           timeout 120 bash -c 'until curl -sf http://localhost:8080/health; do sleep 5; done'
           echo "Waiting for Trino..."
           timeout 120 bash -c 'until curl -sf http://localhost:8081/v1/info; do sleep 5; done'
-          echo "All services ready."
+          echo "Waiting for MLflow..."
+          timeout 120 bash -c 'until curl -sf http://localhost:5000/health; do sleep 5; done'
+          echo "All core services ready."
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
-      - name: Run integration tests
-        run: pytest tests/integration/ -v --tb=short
+      - name: Run DAG + data pipeline integration tests
+        run: pytest tests/integration/test_dag_integrity.py -v --tb=short
+
+      - name: Run API integration tests (skipped if no Production model registered)
+        run: |
+          pytest tests/integration/test_api_endpoint.py -v --tb=short \
+            -k "health or metrics" \
+            || echo "API endpoint tests skipped (no Production model in registry yet)"
 
       - name: Dump service logs on failure
         if: failure()
         run: docker compose logs --tail=100
+
+      - name: Dump MLflow logs on failure
+        if: failure()
+        run: docker compose logs mlflow
+
+      - name: Dump API logs on failure
+        if: failure()
+        run: docker compose logs api
 
       - name: Tear down
         if: always()

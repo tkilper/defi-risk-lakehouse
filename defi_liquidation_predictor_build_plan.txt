@@ -1,0 +1,794 @@
+================================================================================
+DEFI LIQUIDATION PROBABILITY PREDICTOR — ML/MLOPS BUILD PLAN
+================================================================================
+
+OVERVIEW
+--------
+A full-lifecycle ML/MLOps project that extends the DeFi Risk Lakehouse into a
+trained, deployed, and monitored machine learning system. The model predicts
+the probability that an open DeFi borrowing position will be liquidated within
+the next 24 hours, given its current state and recent price dynamics.
+
+The data engineering layer (The Graph ingestion → Spark → Iceberg → dbt) is
+already built in the DeFi Risk Lakehouse. This project adds everything above
+that layer: ground truth labels, feature engineering, model training with
+experiment tracking, a serving endpoint, drift monitoring, and a full MLOps
+infrastructure (CI/CD, pre-commit, Makefile, DVC, reproducibility).
+
+Everything runs locally in Docker Compose. No cloud account required.
+
+
+================================================================================
+GOAL
+================================================================================
+
+Predict: given an open borrow position snapshot, what is the probability it
+gets liquidated within 24 hours?
+
+This is a binary classification problem with clear ground truth (liquidation
+events are on-chain and fully observable after the fact). The model improves
+on the rule-based health factor tiers already in the lakehouse by capturing
+non-linear interactions: a position with HF 1.08 backed by a single volatile
+collateral asset in a fast-moving market is far more dangerous than one with
+HF 1.05 backed by diversified stablecoins.
+
+
+================================================================================
+SKILLS DEMONSTRATED
+================================================================================
+
+Data Engineering
+  - Extending an existing batch lakehouse with a new data source (liquidation
+    events) and a new table type (position snapshots for time-series features)
+  - Building ground truth labels from on-chain event data
+
+Machine Learning
+  - Tabular binary classification (XGBoost)
+  - Time-series cross-validation to prevent data leakage
+  - Feature importance and SHAP interpretability
+  - Hyperparameter search with Optuna
+  - Model calibration (probability outputs, not just rankings)
+
+MLOps
+  - Experiment tracking and model registry (MLflow)
+  - Data versioning (DVC backed by MinIO)
+  - Workflow orchestration for retraining (Airflow)
+  - Model serving (FastAPI)
+  - Model and data drift monitoring (Evidently AI)
+  - Reproducibility: pinned data + code + parameters per run
+  - CI/CD pipeline (GitHub Actions)
+  - Pre-commit hooks (ruff, mypy, detect-secrets)
+  - Makefile for all developer operations
+
+
+================================================================================
+STACK (100% FREE + LOCAL)
+================================================================================
+
+Layer                  Tool                       Notes
+---------------------  -------------------------  -----------------------------
+Data source            The Graph APIs             Aave V3, Compound V3, MakerDAO
+                                                  (reuse existing clients)
+Object storage         MinIO                      Already in docker-compose
+Iceberg catalog        Nessie                     Already in docker-compose
+SQL engine             Trino                      Already in docker-compose
+Batch processing       Apache Spark               Already in docker-compose
+Orchestration          Apache Airflow             Already in docker-compose
+Experiment tracking    MLflow                     New Docker service (port 5000)
+Model registry         MLflow Model Registry      Bundled with MLflow
+Artifact store         MinIO (s3://mlflow/)       Reuses existing MinIO instance
+Model training         XGBoost + scikit-learn     pip install
+Hyperparameter search  Optuna                     pip install, local
+Interpretability       SHAP                       pip install
+Model serving          FastAPI + uvicorn           New Docker service (port 8000)
+Drift monitoring       Evidently AI               pip install, HTML reports
+Data versioning        DVC                        MinIO as remote
+Language               Python 3.11
+Linter / formatter     Ruff                       Consistent with lakehouse
+Type checking          mypy
+CI/CD                  GitHub Actions             Free for public repos
+Pre-commit             pre-commit                 pip install
+Infrastructure         Docker Compose             One command startup
+
+
+================================================================================
+ARCHITECTURE
+================================================================================
+
+The Graph APIs (Aave / Compound / MakerDAO)
+         |
+         | Airflow: liquidation_labels_dag (daily)
+         v
+  MinIO s3://lakehouse/raw/liquidations/   <-- new raw layer
+         |
+         | Spark: bronze_liquidations.py
+         v
+  nessie.bronze.liquidation_events         <-- new bronze table
+         |
+         | Spark: silver_position_snapshots.py
+         v
+  nessie.silver.position_snapshots         <-- hourly snapshots with price data
+         |
+         | Airflow: feature_engineering_dag (daily)
+         v
+  nessie.gold.ml_features                  <-- labeled feature table
+         |
+    +----+----+
+    |         |
+    v         v
+ Training   Batch scoring (open positions, no label yet)
+    |         |
+    v         v
+ MLflow     FastAPI /predict
+ Registry   (port 8000)
+    |         |
+    v         v
+ Evidently  Postgres: predictions log
+ drift      (for monitoring)
+ reports
+
+
+================================================================================
+PHASE 1: EXTEND THE LAKEHOUSE WITH LIQUIDATION DATA
+================================================================================
+
+The existing lakehouse tracks open positions. To build ground truth labels we
+need liquidation events — when a position actually got liquidated, for how much,
+and at what price. This phase adds that data source.
+
+Step 1 - Understand the existing lakehouse schema
+  - Review nessie.silver.* tables (positions from Aave, Compound, Maker)
+  - Understand the grain: one row per user × protocol × snapshot time
+  - Note which fields are already available: health_factor, collateral_usd,
+    debt_usd, ltv, liquidation_threshold
+  - These are your feature inputs — no reinvention needed
+
+Step 2 - Ingest Aave V3 liquidation events from The Graph
+  - The Graph Aave V3 subgraph exposes LiquidationCall events
+  - GraphQL query fields needed:
+      id, timestamp, blockNumber
+      user { id }
+      collateralReserve { symbol, decimals }
+      debtReserve { symbol, decimals }
+      liquidatedCollateralAmount (in token units)
+      debtToCover (in token units)
+      liquidator { id }
+  - Write ingestion/liquidation_client.py using the same pattern as
+    existing aave_client.py (pagination, retry, rate limiting)
+  - Sink raw NDJSON to MinIO: s3://lakehouse/raw/liquidations/aave/
+
+Step 3 - Ingest Compound V3 and MakerDAO liquidation events
+  - Compound V3: AbsorbCollateral events from the Compound subgraph
+    Fields: absorber, borrower, basePaidOut, timestamp
+  - MakerDAO: Bite events (CDP liquidations)
+    Fields: urn, ink, art, tab, timestamp
+  - Same pattern: raw NDJSON to MinIO per protocol
+
+Step 4 - Add a Spark bronze job for liquidation events
+  - spark/bronze_liquidations.py
+  - Reads raw NDJSON from MinIO
+  - Writes to nessie.bronze.liquidation_events (Iceberg)
+  - Schema: liquidation_id, protocol, user_address, collateral_asset,
+    debt_asset, collateral_amount_usd, debt_covered_usd, timestamp,
+    block_number, ingested_at
+
+Step 5 - Normalize into a silver liquidation table
+  - spark/silver_liquidations.py
+  - Standardize across protocols (same schema regardless of source)
+  - USD-value all amounts using the price oracle data already in silver
+  - Write to nessie.silver.liquidation_events
+
+Step 6 - Build a position snapshot table
+  - The existing silver tables capture positions at ingestion time (daily)
+  - For time-series features (price velocity, HF rate of change) you need
+    snapshots at multiple timestamps — ideally every 1–6 hours
+  - Modify the Airflow ingest DAG to run every 6 hours instead of daily
+    OR create a separate snapshot DAG that re-queries the open positions
+    and writes a timestamped snapshot row each run
+  - Write to nessie.silver.position_snapshots
+  - Schema: snapshot_id, user_address, protocol, snapshot_time,
+    health_factor, collateral_usd, debt_usd, ltv, liquidation_threshold,
+    collateral_assets (array), debt_assets (array)
+
+Step 7 - Backfill historical data
+  - The Graph allows historical queries via block number
+  - Write scripts/backfill_labels.py to query 90 days of historical
+    positions and liquidation events
+  - This gives you enough training data without waiting months
+
+
+================================================================================
+PHASE 2: FEATURE ENGINEERING + GROUND TRUTH LABELS
+================================================================================
+
+Step 8 - Build the ground truth labels table
+  - For each position snapshot, determine if that position was liquidated
+    within 24 hours after the snapshot timestamp
+  - Implementation: join nessie.silver.position_snapshots to
+    nessie.silver.liquidation_events on user_address + protocol
+    where liquidation timestamp is between snapshot_time and
+    snapshot_time + INTERVAL 24 HOURS
+  - Binary label: liquidated_within_24h (1 or 0)
+  - Important: for training, only use snapshots where 24h has elapsed
+    (do not label snapshots from the last 24h as negatives — they may
+    still liquidate)
+  - Write to nessie.gold.position_labels
+
+Step 9 - Engineer time-series features
+  - Price velocity features (require price oracle at multiple timestamps):
+      eth_price_change_pct_1h
+      eth_price_change_pct_6h
+      eth_price_change_pct_24h
+      btc_price_change_pct_24h   (correlation signal)
+  - Health factor trend (from snapshots):
+      health_factor_delta_6h      (HF now minus HF 6h ago)
+      health_factor_delta_24h
+      health_factor_min_24h       (lowest HF in past 24h)
+  - Position structure features:
+      num_collateral_assets       (diversification)
+      largest_collateral_pct      (concentration risk)
+      is_eth_dominant_collateral  (bool: ETH > 60% of collateral)
+      collateral_volatility_30d   (rolling std of collateral price)
+  - Protocol features:
+      protocol                    (label encoded: aave=0, compound=1, maker=2)
+      liquidation_threshold       (protocol parameter, already in silver)
+      borrow_apy                  (cost of carry pressure)
+  - User history features:
+      user_prior_liquidations     (count of past liquidations for this wallet)
+      days_position_open          (older positions may be more managed)
+  - Base features (already in silver, pass through):
+      health_factor
+      collateral_usd
+      debt_usd
+      ltv_ratio                   (debt_usd / collateral_usd)
+
+Step 10 - Build the ML feature table
+  - features/feature_pipeline.py
+  - Reads from nessie.silver.position_snapshots + nessie.gold.position_labels
+  - Computes all engineered features via Spark window functions
+  - Joins to labels
+  - Outputs: one row per snapshot with all features + label + snapshot_time
+  - Write to nessie.gold.ml_features (Iceberg, partitioned by snapshot_date)
+
+Step 11 - Profile the feature table
+  - Class imbalance: liquidations are rare (~2-5% of snapshots)
+    Document the imbalance ratio. Use scale_pos_weight in XGBoost or
+    class_weight in sklearn to handle it. Do NOT oversample first.
+  - Feature null rates: document which features have gaps and why
+  - Target leakage check: verify no features use data from after
+    snapshot_time (especially price features — use only prices known at
+    snapshot_time, not 1h later)
+  - Time distribution: plot liquidation rate by month to check for
+    regime shifts (e.g. March 2023 USDC depeg, Nov 2022 FTX collapse)
+
+
+================================================================================
+PHASE 3: MODEL TRAINING + EXPERIMENT TRACKING
+================================================================================
+
+Step 12 - Set up MLflow locally
+  - Add MLflow service to docker-compose.yml:
+      image: ghcr.io/mlflow/mlflow:v2.13.0
+      port: 5000
+      backend-store-uri: postgresql://...  (reuse existing Postgres)
+      default-artifact-root: s3://mlflow/ (reuse existing MinIO)
+      environment: MinIO credentials as AWS_* env vars
+  - MLflow UI accessible at http://localhost:5000
+  - All training runs automatically logged here
+
+Step 13 - Implement time-series cross-validation
+  - Do NOT use random train/test split — this leaks future data into training
+  - Use sklearn's TimeSeriesSplit or a manual walk-forward approach:
+      Fold 1: train on months 1-2,  validate on month 3
+      Fold 2: train on months 1-3,  validate on month 4
+      Fold 3: train on months 1-4,  validate on month 5
+      ...
+  - This tests whether the model generalizes to future market conditions
+  - Hold out the final 2 weeks as a true holdout (never used in any fold)
+
+Step 14 - Implement baseline models
+  - training/train.py — start with two baselines before XGBoost:
+      Baseline 1: rule-based (liquidated if HF < 1.05, per existing lakehouse)
+                  This is what you're trying to beat
+      Baseline 2: logistic regression (linear benchmark)
+  - Log both to MLflow with the same metrics so comparison is automatic
+  - Metrics to track:
+      AUC-ROC                (discrimination — are high-risk positions ranked higher?)
+      Average Precision (AP)  (precision-recall AUC, better for imbalanced data)
+      Precision@top10pct     (of positions your model flags as top-10% risk, what fraction actually liquidated?)
+      Brier score            (calibration — are probability outputs trustworthy?)
+      F1 at threshold=0.3    (operational: if you alert at 30% probability)
+
+Step 15 - Train the primary XGBoost model
+  - training/train.py
+  - Key XGBoost parameters to tune:
+      n_estimators, max_depth, learning_rate, subsample,
+      colsample_bytree, scale_pos_weight (handles class imbalance)
+  - Log to MLflow:
+      mlflow.log_params(params)
+      mlflow.log_metrics(metrics per fold + holdout)
+      mlflow.xgboost.log_model(model, artifact_path="model")
+      mlflow.log_artifact("shap_summary.png")
+  - Log the DVC data pointer as a tag so each run knows which data it used:
+      mlflow.set_tag("dvc_data_commit", git_rev_parse HEAD)
+
+Step 16 - Hyperparameter search with Optuna
+  - training/hyperparameter_search.py
+  - Optuna objective function: maximize average precision across CV folds
+  - 50 trials (fast on a laptop for tabular data of this size)
+  - Each trial is a separate MLflow run nested under a parent experiment
+  - Log best params, re-train final model on full training set with best params
+  - Log final model to MLflow as the "champion" run
+
+Step 17 - SHAP interpretability
+  - training/evaluate.py
+  - Compute SHAP values on holdout set using shap.TreeExplainer
+  - Generate and log to MLflow:
+      shap_summary_plot.png      (global feature importance)
+      shap_beeswarm.png          (feature direction + magnitude)
+      shap_waterfall_example.png (single high-risk position explained)
+  - Document which features drive predictions — this is the portfolio story:
+    "health factor rate of change over 6h was the strongest signal,
+     outweighing current health factor level alone"
+
+Step 18 - Register the champion model
+  - Use MLflow Model Registry to promote the best run:
+      Stage: Staging → (after validation) → Production
+  - The serving layer always loads from Production stage
+  - Keep at least the last 3 versions in registry for rollback
+  - Document the promotion criteria in the README:
+    AUC-ROC > baseline + 0.05 AND Brier score < 0.10
+
+
+================================================================================
+PHASE 4: MODEL SERVING
+================================================================================
+
+Step 19 - Build the FastAPI serving endpoint
+  - serving/app.py
+  - On startup: load model from MLflow registry (Production stage)
+    uses mlflow.xgboost.load_model("models:/liquidation-predictor/Production")
+  - Endpoints:
+      POST /predict
+        input: JSON with all feature values for one position
+        output: { "liquidation_probability": 0.73, "risk_tier": "CRITICAL",
+                  "model_version": "3", "snapshot_time": "2026-04-25T12:00:00" }
+      GET /health
+        output: { "status": "ok", "model_version": "3", "loaded_at": "..." }
+      GET /metrics  (Prometheus-format for optional scraping)
+  - Risk tier mapping (mirrors existing lakehouse tiers for consistency):
+      probability >= 0.50 → CRITICAL
+      probability >= 0.25 → AT_RISK
+      probability >= 0.10 → WATCH
+      probability <  0.10 → HEALTHY
+  - serving/predictor.py: wraps model loading + feature validation (pydantic)
+  - Dockerfile: python:3.11-slim + uvicorn
+
+Step 20 - Add serving container to docker-compose.yml
+  - service: api
+  - build: ./serving
+  - port: 8000
+  - environment: MLflow tracking URI + MinIO credentials (to load artifacts)
+  - depends_on: mlflow, postgres
+
+Step 21 - Batch scoring Airflow DAG
+  - airflow/dags/batch_score_dag.py
+  - Runs daily after feature_engineering_dag completes
+  - Reads all currently open positions from nessie.gold.ml_features
+    (positions without a label — they haven't liquidated yet)
+  - Calls FastAPI /predict for each position (or loads model directly
+    in the DAG to avoid HTTP overhead for large batches)
+  - Writes predictions to postgres: predictions_log table
+    schema: position_id, protocol, user_address, snapshot_time,
+            liquidation_probability, risk_tier, model_version, scored_at
+  - This log is what Evidently reads for monitoring
+
+
+================================================================================
+PHASE 5: MONITORING + AUTOMATED RETRAINING
+================================================================================
+
+Step 22 - Data drift monitoring with Evidently
+  - monitoring/drift_report.py
+  - Evidently compares two datasets:
+      Reference: the feature table used to train the current model
+      Current:   the last 7 days of incoming position snapshots
+  - Drift detection on key features:
+      health_factor (Wasserstein distance)
+      collateral_usd (Wasserstein distance)
+      eth_price_change_pct_24h (Wasserstein distance)
+      largest_collateral_pct (KS test)
+      protocol distribution (chi-squared test)
+  - Generates HTML report: reports/drift_YYYY-MM-DD.html
+  - Logs drift metrics to MLflow as a "monitoring" run
+  - If dataset drift detected (>25% features drifted): trigger retraining
+
+Step 23 - Prediction drift monitoring
+  - monitoring/drift_report.py (same script, separate report)
+  - Compare distribution of predicted probabilities this week vs last week
+  - A shift here (e.g. model suddenly predicting everything at 0.9) signals
+    a data quality issue or a market regime shift the model hasn't seen
+  - Log: mean prediction, std, % flagged as AT_RISK or higher
+
+Step 24 - Automated retraining Airflow DAG
+  - airflow/dags/model_retrain_dag.py
+  - Triggers: (a) weekly schedule OR (b) Evidently drift alert
+  - DAG steps:
+      1. feature_engineering_task  — rebuild gold.ml_features with new data
+      2. dvc_snapshot_task         — snapshot current data, push to MinIO DVC remote
+      3. train_task                — run training/train.py via BashOperator
+      4. evaluate_task             — compare new model vs Production model in registry
+      5. promote_task              — if new model beats Production, promote it
+                                     (uses MLflow MlflowClient to update stage)
+      6. reload_api_task           — POST /reload to FastAPI to hot-reload model
+  - If new model does NOT beat current Production: log failure, keep current model,
+    alert via Airflow email (or Slack webhook if configured)
+
+
+================================================================================
+PHASE 6: REPRODUCIBILITY + DATA VERSIONING (DVC)
+================================================================================
+
+Step 25 - Initialize DVC
+  - pip install dvc dvc-s3
+  - dvc init (in project root)
+  - Configure MinIO as the DVC remote:
+      dvc remote add -d minio s3://dvc-artifacts/
+      dvc remote modify minio endpointurl http://localhost:9000
+      dvc remote modify minio access_key_id minioadmin
+      dvc remote modify minio secret_access_key minioadmin
+  - Add .dvc/ to git, add .dvc/cache to .gitignore
+
+Step 26 - Version the training dataset
+  - Each retraining run exports the feature table to a parquet file:
+      data/training_features_YYYY-MM-DD.parquet
+  - Track with DVC:
+      dvc add data/training_features_YYYY-MM-DD.parquet
+      git add data/training_features_YYYY-MM-DD.parquet.dvc
+      git commit -m "training data snapshot YYYY-MM-DD"
+  - The DVC pointer file (.dvc) is committed to git; the actual parquet
+    lives in MinIO. Anyone can reproduce: dvc pull → exact same data
+
+Step 27 - Pin reproducibility in MLflow
+  - Every MLflow training run logs:
+      mlflow.set_tag("git_commit", subprocess.check_output(["git", "rev-parse", "HEAD"]))
+      mlflow.set_tag("dvc_data_file", "data/training_features_YYYY-MM-DD.parquet")
+      mlflow.set_tag("dvc_data_md5", <md5 from .dvc file>)
+      mlflow.log_artifact("requirements.txt")
+  - To reproduce any past run:
+      1. git checkout <git_commit>
+      2. dvc pull data/training_features_YYYY-MM-DD.parquet
+      3. python training/train.py
+  - Document this in the README — this is the reproducibility story
+
+
+================================================================================
+PHASE 7: MLOPS INFRASTRUCTURE
+================================================================================
+
+Step 28 - Pre-commit hooks
+  - .pre-commit-config.yaml:
+      repos:
+        - repo: https://github.com/astral-sh/ruff-pre-commit
+          rev: v0.4.4
+          hooks:
+            - id: ruff
+              args: [--fix]
+            - id: ruff-format
+        - repo: https://github.com/pre-commit/mirrors-mypy
+          rev: v1.9.0
+          hooks:
+            - id: mypy
+              additional_dependencies: [types-requests, pydantic]
+        - repo: https://github.com/Yelp/detect-secrets
+          rev: v1.4.0
+          hooks:
+            - id: detect-secrets
+        - repo: https://github.com/pre-commit/pre-commit-hooks
+          rev: v4.6.0
+          hooks:
+            - id: trailing-whitespace
+            - id: end-of-file-fixer
+            - id: check-yaml
+  - Install: pre-commit install (runs automatically on git commit)
+
+Step 29 - GitHub Actions CI/CD pipeline
+  - .github/workflows/ci.yml
+  - Jobs (run in order):
+
+      lint:
+        trigger: every push
+        steps:
+          - ruff check .
+          - ruff format --check .
+          - mypy training/ serving/ features/ monitoring/
+
+      unit-tests:
+        trigger: every push
+        steps:
+          - pip install -r requirements-dev.txt
+          - pytest tests/unit/ -v --tb=short
+
+      dag-integrity:
+        trigger: every push
+        steps:
+          - pip install apache-airflow
+          - python -c "from airflow.models import DagBag; ..."
+          - assert no import errors, no cycles
+
+      integration-tests:
+        trigger: push to main only
+        steps:
+          - docker compose up -d (mlflow, postgres, minio, api)
+          - pytest tests/integration/ -v
+          - docker compose down
+
+      model-training:
+        trigger: push to main only (or manual dispatch)
+        steps:
+          - dvc pull (fetch training data from MinIO DVC remote)
+          - python training/train.py
+          - python training/evaluate.py
+          - echo "MLflow run logged"
+
+Step 30 - Makefile
+  - Makefile targets:
+
+      init:          cp .env.example .env && docker compose build
+      up:            docker compose up -d
+      down:          docker compose down
+      ps:            docker compose ps
+
+      ingest:        trigger Airflow DAG: liquidation_labels_dag
+      features:      trigger Airflow DAG: feature_engineering_dag
+      train:         python training/train.py
+      tune:          python training/hyperparameter_search.py
+      evaluate:      python training/evaluate.py
+
+      serve:         docker compose up -d api
+      predict:       curl -X POST http://localhost:8000/predict -d @sample_position.json
+      reload-model:  curl -X POST http://localhost:8000/reload
+
+      monitor:       python monitoring/drift_report.py
+      score:         trigger Airflow DAG: batch_score_dag
+      retrain:       trigger Airflow DAG: model_retrain_dag
+
+      test-unit:     pytest tests/unit/ -v
+      test-int:      pytest tests/integration/ -v
+      test:          make test-unit && make test-int
+
+      lint:          ruff check . && ruff format --check .
+      format:        ruff format .
+      typecheck:     mypy training/ serving/ features/ monitoring/
+      pre-commit:    pre-commit run --all-files
+
+      mlflow-ui:     open http://localhost:5000
+      airflow-ui:    open http://localhost:8080
+      minio-ui:      open http://localhost:9001
+
+      dvc-push:      dvc push
+      dvc-pull:      dvc pull
+
+      clean:         docker compose down -v && rm -rf data/*.parquet
+
+
+================================================================================
+PHASE 8: TESTING STRATEGY
+================================================================================
+
+Unit Tests (tests/unit/) — no Docker required
+  test_features.py
+    - test_health_factor_delta_computed_correctly()
+        Given two snapshots 6h apart with known HF values,
+        assert delta = current - previous (not reversed)
+    - test_concentration_features_single_asset()
+        Position with one collateral asset: largest_collateral_pct == 1.0
+    - test_price_change_pct_handles_zero_price()
+        If previous price is 0 (bad data), assert feature is None not inf
+    - test_label_not_assigned_within_last_24h()
+        Snapshots within 24h of NOW should not receive a negative label
+        (they may still liquidate — they should be excluded from training)
+
+  test_liquidation_client.py
+    - test_graphql_pagination_yields_all_records()
+        Mock HTTP responses with nextPage pointer; assert all pages fetched
+    - test_retry_on_429_rate_limit()
+        Mock 429 response followed by 200; assert retry with backoff
+
+  test_predictor.py (serving/predictor.py)
+    - test_predict_returns_probability_between_0_and_1()
+        Load a mocked model, assert output is float in [0, 1]
+    - test_risk_tier_mapping()
+        probability=0.6 → CRITICAL
+        probability=0.3 → AT_RISK
+        probability=0.05 → HEALTHY
+    - test_missing_feature_raises_validation_error()
+        Omit required field from input; assert pydantic raises ValidationError
+
+Integration Tests (tests/integration/) — requires docker compose up
+  conftest.py
+    - FastAPI TestClient fixture
+    - MLflow test experiment fixture (runs against local MLflow service)
+
+  test_api_endpoint.py
+    - test_health_endpoint_returns_200()
+    - test_predict_with_valid_position_returns_probability()
+        POST a real feature vector; assert response schema matches
+    - test_predict_with_invalid_types_returns_422()
+        POST health_factor as string; assert 422 Unprocessable Entity
+    - test_model_version_in_response_matches_registry()
+        Assert returned model_version matches MLflow Production version
+
+
+================================================================================
+DOCKER COMPOSE SERVICES
+================================================================================
+
+New services to add on top of the existing DeFi Risk Lakehouse stack:
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    port: 5000
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://airflow:airflow@postgres/mlflow
+      --default-artifact-root s3://mlflow/
+      --host 0.0.0.0
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    depends_on: postgres, minio
+
+  api:
+    build: ./serving
+    port: 8000
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    depends_on: mlflow
+
+Additional MinIO buckets to create at startup:
+  - mlflow        (MLflow artifact store)
+  - dvc-artifacts (DVC remote)
+
+
+================================================================================
+DIRECTORY STRUCTURE
+================================================================================
+
+defi-liquidation-predictor/
+├── Makefile
+├── pyproject.toml              (ruff, mypy, pytest config)
+├── requirements.txt
+├── requirements-dev.txt
+├── .env.example
+├── .pre-commit-config.yaml
+├── docker-compose.yml
+├── dvc.yaml
+├── .dvc/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+├── data/
+│   └── .gitkeep               (parquet snapshots tracked by DVC, not git)
+├── reports/
+│   └── .gitkeep               (Evidently HTML reports)
+├── ingestion/
+│   ├── __init__.py
+│   ├── liquidation_client.py   (The Graph liquidation events)
+│   ├── aave_liq_client.py
+│   ├── compound_liq_client.py
+│   └── maker_liq_client.py
+├── spark/
+│   ├── bronze_liquidations.py
+│   ├── silver_liquidations.py
+│   └── silver_position_snapshots.py
+├── features/
+│   ├── __init__.py
+│   ├── feature_pipeline.py     (Spark: builds gold.ml_features)
+│   └── feature_definitions.py  (constants, column names)
+├── training/
+│   ├── __init__.py
+│   ├── train.py                (MLflow experiment, XGBoost)
+│   ├── evaluate.py             (metrics, SHAP plots)
+│   └── hyperparameter_search.py (Optuna)
+├── serving/
+│   ├── __init__.py
+│   ├── app.py                  (FastAPI)
+│   ├── predictor.py            (model loading + pydantic schemas)
+│   ├── Dockerfile
+│   └── requirements.txt
+├── monitoring/
+│   ├── __init__.py
+│   ├── drift_report.py         (Evidently data + prediction drift)
+│   └── batch_score.py          (score open positions, write to postgres)
+├── airflow/
+│   └── dags/
+│       ├── liquidation_labels_dag.py
+│       ├── feature_engineering_dag.py
+│       ├── batch_score_dag.py
+│       └── model_retrain_dag.py
+├── scripts/
+│   ├── backfill_labels.py
+│   └── seed_mlflow_experiment.py
+└── tests/
+    ├── unit/
+    │   ├── conftest.py
+    │   ├── test_features.py
+    │   ├── test_liquidation_client.py
+    │   └── test_predictor.py
+    └── integration/
+        ├── conftest.py
+        └── test_api_endpoint.py
+
+
+================================================================================
+SEQUENCING + TIME ESTIMATES
+================================================================================
+
+Phase 1 — Extend lakehouse with liquidation data:     1-2 weeks
+  (Add liquidation event ingestion + snapshot table)
+
+Phase 2 — Feature engineering + ground truth labels:  1-2 weeks
+  (Spark feature pipeline, label construction, profiling)
+
+Phase 3 — Model training + experiment tracking:       1-2 weeks
+  (MLflow setup, baselines, XGBoost, Optuna, SHAP)
+
+Phase 4 — Model serving:                              3-5 days
+  (FastAPI endpoint, batch scoring DAG)
+
+Phase 5 — Monitoring + retraining loop:               3-5 days
+  (Evidently drift reports, retraining DAG)
+
+Phase 6 — Reproducibility (DVC):                      1-2 days
+  (DVC init, data versioning, MLflow tagging)
+
+Phase 7 — MLOps infrastructure:                       3-5 days
+  (Pre-commit, GitHub Actions, Makefile)
+
+Phase 8 — Testing:                                    3-5 days
+  (Unit tests, integration tests — many written alongside earlier phases)
+
+Total: 5-8 weeks working part-time (~10 hrs/week)
+
+
+================================================================================
+PORTFOLIO PRESENTATION STORY
+================================================================================
+
+The arc to present to interviewers:
+
+1. "I already had the data pipeline — Airflow ingesting DeFi positions,
+   Spark normalizing into Iceberg, dbt computing health factors."
+
+2. "The existing system used rule-based risk tiers (HF < 1.05 = critical).
+   I wanted to test whether ML could do better by capturing non-linear
+   relationships — especially price velocity and collateral concentration."
+
+3. "I added liquidation event ingestion to build ground truth labels, then
+   engineered time-series features across 6h and 24h windows."
+
+4. "XGBoost with time-series cross-validation beat the rule-based baseline
+   by X points of average precision. The SHAP analysis showed that health
+   factor rate of change over 6h was a stronger signal than current HF alone."
+
+5. "The model is deployed as a FastAPI endpoint, retrained weekly via Airflow,
+   and monitored with Evidently. Every training run is reproducible: the
+   exact data snapshot is versioned in DVC and pinned to the MLflow run."
+
+Key numbers to have ready:
+  - Training set size (# of position snapshots, # of liquidations)
+  - Class imbalance ratio
+  - AUC-ROC: baseline vs XGBoost vs tuned XGBoost
+  - Average Precision: same comparison
+  - Top feature by SHAP importance
+  - Drift detection sensitivity (what % of features drifted triggers a retrain?)
+
+The evaluation section — real numbers comparing the rule-based baseline to
+the ML model — is what makes this a portfolio project, not a tutorial follow.
+
+================================================================================

@@ -54,12 +54,19 @@ class TestDagImport:
         )
 
     def test_expected_dags_present(self, dag_bag):
-        expected = {"defi_ingest", "defi_transform"}
+        expected = {
+            "defi_ingest",
+            "defi_transform",
+            "liquidation_labels",
+            "feature_engineering",
+            "batch_score",
+            "model_retrain",
+        }
         actual = set(dag_bag.dags.keys())
         assert expected.issubset(actual), f"Missing DAGs: {expected - actual}"
 
     def test_dag_count(self, dag_bag):
-        assert len(dag_bag.dags) >= 2
+        assert len(dag_bag.dags) >= 6
 
 
 class TestDefiIngestDag:

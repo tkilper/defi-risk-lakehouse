@@ -98,6 +98,8 @@ services:
         mc mb --ignore-existing myminio/lakehouse;
         mc mb --ignore-existing myminio/lakehouse/raw;
         mc mb --ignore-existing myminio/lakehouse/warehouse;
+        mc mb --ignore-existing myminio/mlflow;
+        mc mb --ignore-existing myminio/dvc-artifacts;
         echo 'MinIO buckets ready.';
       "
     restart: "no"
@@ -189,6 +191,80 @@ services:
       - defi-net
     depends_on:
       - spark-master
+    restart: unless-stopped
+
+  # ── MLflow (experiment tracking + model registry) ────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    container_name: defi-mlflow
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://airflow:airflow@postgres/mlflow
+      --default-artifact-root s3://mlflow/
+      --host 0.0.0.0
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    ports:
+      - "5000:5000"   # MLflow UI → http://localhost:5000
+    networks:
+      - defi-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── MLflow DB init (one-shot: create mlflow DB in postgres) ───────────────
+  mlflow-db-init:
+    image: postgres:16.3-alpine
+    container_name: defi-mlflow-db-init
+    networks:
+      - defi-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: airflow
+    entrypoint: >
+      /bin/sh -c "
+        psql -h postgres -U airflow -c 'CREATE DATABASE mlflow;' 2>/dev/null || echo 'mlflow DB already exists';
+        echo 'MLflow DB ready.';
+      "
+    restart: "no"
+
+  # ── Liquidation Predictor API ─────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: serving/Dockerfile
+    container_name: defi-predictor-api
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MODEL_NAME: liquidation-predictor
+      MODEL_STAGE: Production
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    ports:
+      - "8000:8000"   # API → http://localhost:8000
+    networks:
+      - defi-net
+    depends_on:
+      - mlflow
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
 
   # ── Airflow init (one-shot: db migrate + admin user) ──────────────────────
